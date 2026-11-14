@@ -1,0 +1,1693 @@
+<title>Where is my Ferry</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+  /* Layout: a live harbour scene on top (sky follows Port Blair's real time of day, a ferry rides the swell),
+     then the destination selector, then one block per jetty you can leave from. */
+  :root {
+    --bg: #eef4f5; --surface: #ffffff; --ink: #0f2a33; --muted: #557079; --line: #d3e0e3;
+    --sea: #0b6b7c; --on-sea: #ffffff; --tag: #e2edef;
+    --soon: #a34a06; --soon-bg: #fdefd8;
+    --display: "Space Grotesk", "Inter", system-ui, sans-serif;
+    --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #08161b; --surface: #10232a; --ink: #e5f0f2; --muted: #8ea8af; --line: #213b44;
+      --sea: #2f9fb3; --on-sea: #03181d; --tag: #19323a;
+      --soon: #f6b655; --soon-bg: #3a2a0f; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #08161b; --surface: #10232a; --ink: #e5f0f2; --muted: #8ea8af; --line: #213b44;
+    --sea: #2f9fb3; --on-sea: #03181d; --tag: #19323a;
+    --soon: #f6b655; --soon-bg: #3a2a0f; color-scheme: dark;
+  }
+  html, body { background: var(--bg); }
+  [hidden] { display: none !important; }
+  #pane-route { display: grid; gap: 16px; }
+  body { color: var(--ink); font: 15px/1.45 var(--body); overflow-x: clip; }
+  ::selection { background: var(--sea); color: var(--on-sea); }
+
+  /* ── Harbour hero ── */
+  .hero { position: relative; overflow: hidden; color: var(--hero-ink, #ffffff);
+          background: linear-gradient(180deg, var(--sky1, #0b1a2e), var(--sky2, #18324a)); transition: background 1.2s; }
+  .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hero-in { position: relative; z-index: 1; max-width: 520px; margin: 0 auto; padding-block: 22px 118px;
+             padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; opacity: .75; }
+  h1 { font: 700 clamp(30px, 8.4vw, 40px)/1.02 var(--display); letter-spacing: -.02em; margin: 6px 0 8px; text-wrap: balance; }
+  h1 .w { display: inline-block; }
+  .clock { font-variant-numeric: tabular-nums; opacity: .9; }
+  .clock b { font-weight: 600; }
+  .credit { margin-top: 14px; display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; letter-spacing: .02em;
+            padding: 6px 12px 6px 8px; border-radius: 999px; background: rgba(255, 255, 255, .16);
+            border: 1px solid rgba(255, 255, 255, .28); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .credit svg { width: 16px; height: 16px; flex: none; }
+  .credit b { font-weight: 600; }
+  .hint { position: absolute; z-index: 1; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 12px;
+          font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #ffffff;
+          opacity: .7; pointer-events: none; transition: opacity .6s; }
+  .hint.gone { opacity: 0; }
+  .hero { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .hero-in { pointer-events: none; }
+  footer .made { color: var(--ink); font-weight: 500; }
+
+  /* ── Page ── */
+  .page { max-width: 520px; margin: 0 auto; padding-block: 18px 32px; display: grid; gap: 22px;
+          padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .pick { display: grid; gap: 10px; }
+  button:focus-visible, summary:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; }
+
+  #out { display: grid; gap: 26px; }
+  .jetty { display: grid; gap: 10px; }
+  .jetty h2 { font: 700 19px/1.25 var(--display); margin: 0; }
+  .jetty h2 small { display: block; font: 600 12px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+  .next { position: relative; overflow: hidden; background: var(--sea); color: var(--on-sea); border-radius: 16px;
+          padding: 16px 16px 14px; display: grid; gap: 4px; box-shadow: 0 4px 14px rgba(8, 40, 50, .16); }
+  .next .label { color: inherit; opacity: .8; }
+  .next .row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .flip { display: inline-block; overflow: hidden; vertical-align: bottom; }
+  .flip > span { display: inline-block; font: 700 36px/1.1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .flip.go > span { animation: flipIn .7s var(--ease) both; }
+  .count { font: 600 16px var(--body); font-variant-numeric: tabular-nums; }
+  .kind { font-size: 13px; opacity: .9; }
+  /* wait bar: how much of the gap since the last boat has passed; the boat sits at the end */
+  .track { position: relative; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .25); margin: 10px 18px 4px 0; }
+  .track i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: currentColor; transition: width 1s linear; }
+  .track svg { position: absolute; top: 50%; width: 26px; height: 16px; transform: translate(-6px, -78%); transition: left 1s linear;
+               animation: bob 3.2s ease-in-out infinite; }
+  .next.soon { background: var(--soon-bg); color: var(--soon); border: 1px solid var(--soon); box-shadow: none; }
+  .next.soon .track { background: color-mix(in srgb, var(--soon) 22%, transparent); }
+  .next.none { background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
+  .next.none .flip > span { font-size: 21px; }
+
+  ul.times { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  ul.times li { display: grid; grid-template-columns: 5.3em 1fr auto; gap: 10px; align-items: baseline;
+                padding: 10px 2px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  ul.times .t { font-weight: 600; }
+  ul.times .in { color: var(--muted); font-size: 13px; }
+  .tag { justify-self: start; font-size: 12px; background: var(--tag); border-radius: 6px; padding: 2px 7px; }
+  .tag.vf { background: transparent; border: 1px solid var(--muted); }
+  .note { color: var(--muted); font-size: 13px; }
+
+  /* vehicle-ferry voyage scene: its own sunlit (or night) world, so fixed colours on purpose */
+  .voyage { position: relative; margin: 0; border-radius: 16px; overflow: hidden; aspect-ratio: 16 / 10; max-width: 100%;
+            background: #7fc3db; box-shadow: 0 4px 14px rgba(8, 40, 50, .16); }
+  .voyage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .step { position: absolute; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 20px);
+          padding: 4px 13px 4px 4px; border-radius: 999px; background: #ffffff; color: #13306e;
+          font: 700 13.5px/1.2 var(--display); box-shadow: 0 2px 10px rgba(0, 0, 0, .18); }
+  .step b { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+            background: #1d3f8f; color: #ffffff; font-size: 14px; }
+  .step.swap { animation: stepIn .55s var(--ease); }
+  .vcap { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: calc(100% - 20px); width: max-content;
+          text-align: center; padding: 6px 12px; border-radius: 10px; background: rgba(19, 48, 110, .92); color: #ffffff;
+          font: 500 13px/1.3 var(--body); }
+  .vcap b { font-weight: 700; }
+  .vcap small { display: block; margin-top: 2px; font-size: 11.5px; opacity: .85; }
+  @keyframes stepIn { from { opacity: 0; transform: translateY(-8px) scale(.96); } }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 8px 2px; }
+  details li { color: var(--muted); }
+  footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 14px; display: grid; gap: 6px; }
+  footer p { margin: 0; }
+
+  /* ── Where is my Ferry: tabs, jetty search, sailing rows, ferry list, live running status ── */
+  .pick { display: grid; gap: 10px; }
+  .chips { position: relative; display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { position: absolute; left: 0; top: 0; border-radius: 999px; background: var(--sea); z-index: 0;
+          transition: transform .45s var(--ease), width .45s var(--ease), height .45s var(--ease); }
+  .chips button { position: relative; z-index: 1; font: 500 15px var(--body); color: var(--ink); background: var(--surface);
+                  border: 1px solid var(--line); border-radius: 999px; padding: 10px 15px; min-height: 44px; cursor: pointer;
+                  transition: color .3s var(--ease), background-color .3s var(--ease), border-color .3s, transform .15s; }
+  .chips button[aria-pressed="true"] { background: transparent; border-color: transparent; color: var(--on-sea); font-weight: 600; }
+  .chips button:active { transform: scale(.97); }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 999px; background: var(--tag); }
+  .tabs button { font: 600 14px var(--body); color: var(--muted); background: transparent; border: 0; border-radius: 999px; min-height: 40px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(8, 40, 50, .14); }
+  .search { position: relative; display: grid; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+  .fld { display: grid; gap: 2px; padding: 10px 60px 10px 14px; }
+  .fld + .fld { border-top: 1px solid var(--line); }
+  .fld span { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .fld select { font: 600 18px var(--display); color: var(--ink); background: transparent; border: 0; padding: 0; appearance: none; -webkit-appearance: none; cursor: pointer; }
+  .swapbtn { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%;
+          border: 1px solid var(--line); background: var(--bg); color: var(--sea); display: grid; place-items: center; cursor: pointer; transition: transform .35s var(--ease); }
+  .swapbtn svg { width: 20px; height: 20px; }
+  .swapbtn.spin { transform: translateY(-50%) rotate(180deg); }
+  .sl { width: 100%; display: grid; grid-template-columns: 5.3em 1fr auto; gap: 4px 10px; align-items: center; text-align: left;
+        padding: 11px 2px; border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; font: inherit; cursor: pointer; }
+  .sl .t { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sl .who { display: grid; gap: 2px; min-width: 0; }
+  .sl .who small { color: var(--muted); font-size: 12.5px; }
+  .sl .go { color: var(--muted); font-size: 18px; }
+  .chip { justify-self: start; font-size: 12px; font-weight: 600; border-radius: 6px; padding: 2px 7px; background: var(--tag); color: var(--ink); }
+  .chip.sea { background: #d9ecff; color: #114a8a; } .chip.board { background: #dcf5e3; color: #17663a; }
+  .chip.done { background: transparent; color: var(--muted); padding-left: 0; } .chip.soon { background: var(--soon-bg); color: var(--soon); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .chip.sea { background: #12324f; color: #9ccaff; }
+    :root:not([data-theme="light"]) .chip.board { background: #123b24; color: #8fe0ad; } }
+  :root[data-theme="dark"] .chip.sea { background: #12324f; color: #9ccaff; } :root[data-theme="dark"] .chip.board { background: #123b24; color: #8fe0ad; }
+  ul.list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .next { cursor: pointer; }
+  .boat { width: 100%; text-align: left; display: grid; gap: 4px; padding: 14px; border-radius: 14px; border: 1px solid var(--line);
+          background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+  .boat b { font: 700 16px var(--display); } .boat small { color: var(--muted); font-size: 12.5px; }
+  .boat .line { font-size: 14px; }
+  .bar2 { height: 4px; border-radius: 4px; background: var(--tag); overflow: hidden; } .bar2 i { display: block; height: 100%; background: var(--sea); }
+  .boats { display: grid; gap: 10px; }
+  .appbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; background: var(--sea); color: var(--on-sea);
+            padding: 10px max(12px, env(safe-area-inset-right, 0px)) 10px max(8px, env(safe-area-inset-left, 0px)); }
+  .appbar button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .14); color: inherit; display: grid; place-items: center; cursor: pointer; }
+  .appbar svg { width: 22px; height: 22px; }
+  .appbar b { display: block; font: 700 18px var(--display); } .appbar small { display: block; font-size: 12.5px; opacity: .85; }
+  .status { display: grid; gap: 4px; padding: 14px 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+  .status .big { font: 700 21px/1.2 var(--display); } .status .sub { color: var(--muted); font-size: 14px; }
+  .status .mine { font-size: 13.5px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .tlwrap { max-height: 440px; overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); position: relative; }
+  .tlhead { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: 4.6em 4.6em 28px 1fr; gap: 8px; padding: 8px 12px;
+            background: var(--surface); border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  ol.tl { list-style: none; margin: 0; padding: 4px 0; position: relative; }
+  .stop { display: grid; grid-template-columns: 4.6em 4.6em 28px 1fr; gap: 8px; align-items: center; padding: 0 12px; min-height: 58px; font-variant-numeric: tabular-nums; }
+  .stop .tm { font-size: 13.5px; font-weight: 600; } .stop .tm.nil { color: var(--muted); font-weight: 400; }
+  .stop .ln { position: relative; align-self: stretch; }
+  .stop .ln::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; transform: translateX(-50%); background: var(--line); }
+  .stop:first-child .ln::before { top: 50%; } .stop:last-child .ln::before { bottom: 50%; }
+  .stop .ln::after { content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%);
+                     background: var(--surface); border: 3px solid var(--muted); box-sizing: border-box; }
+  .stop.past .ln::before { background: var(--sea); } .stop.past .ln::after { border-color: var(--sea); background: var(--sea); }
+  .stop.past .jt, .stop.past .tm { opacity: .6; }
+  .stop .jt b { display: block; font-weight: 600; } .stop .jt small { color: var(--muted); font-size: 12px; }
+  .stop .jt em { display: inline-block; margin-top: 2px; font: 600 11px var(--body); font-style: normal; padding: 1px 6px; border-radius: 6px; background: var(--soon-bg); color: var(--soon); }
+  .marker { position: absolute; z-index: 1; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: var(--sea); color: var(--on-sea);
+            display: grid; place-items: center; box-shadow: 0 0 0 4px color-mix(in srgb, var(--sea) 25%, transparent); transition: top 1s linear; }
+  .marker svg { width: 18px; height: 12px; }
+  .marker::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--sea); animation: ping 2s ease-out infinite; }
+  @keyframes ping { to { transform: scale(1.7); opacity: 0; } }
+  .honest { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+  /* entrances: blur-rise, staggered with --i; resting state is fully visible */
+  .rise { animation: rise .8s var(--ease) both; animation-delay: calc(var(--i, 0) * 70ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px); filter: blur(8px); } }
+  @keyframes flipIn { from { transform: translateY(100%); opacity: 0; } }
+  @keyframes bob { 50% { transform: translate(-6px, -92%) rotate(-3deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .rise, .flip.go > span, .track svg, .marker::after { animation: none; }
+    .pill, .chips button, .track i, .track svg, .hero, .marker { transition: none; }
+  }
+</style>
+
+<header class="hero" id="hero">
+  <canvas id="sea" aria-hidden="true"></canvas>
+  <div class="hero-in">
+    <div class="eyebrow rise" style="--i:0">Port Blair harbour · live by the timetable</div>
+    <h1 id="title"><span class="w rise" style="--i:1">Where</span> <span class="w rise" style="--i:2">is</span> <span class="w rise" style="--i:3">my</span> <span class="w rise" style="--i:3">Ferry</span></h1>
+    <div class="clock rise" style="--i:4" id="clock"></div>
+    <div class="credit rise" style="--i:5">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14M5 13a7 7 0 0 0 14 0M8 10h8"/></svg>
+      <span>Created by <b>Mahesh Surada</b> · DSS Staff</span>
+    </div>
+  </div>
+  <div class="hint" id="hint" aria-hidden="true">Tap the sea</div>
+</header>
+
+<div class="page" id="home">
+  <div class="tabs rise" style="--i:6" role="tablist" aria-label="Find a ferry">
+    <button type="button" role="tab" id="tab-route" aria-selected="true" aria-controls="pane-route">Jetty to jetty</button>
+    <button type="button" role="tab" id="tab-boats" aria-selected="false" aria-controls="pane-boats">Spot your ferry</button>
+  </div>
+  <section id="pane-route" role="tabpanel" aria-labelledby="tab-route" class="page-in">
+    <div class="pick rise" style="--i:7">
+      <div class="label" id="pick-label">Where are you going?</div>
+      <div class="chips" id="chips" role="group" aria-labelledby="pick-label"><span class="pill" id="pill" aria-hidden="true"></span></div>
+    </div>
+    <main id="out" aria-live="polite"></main>
+  </section>
+  <section id="pane-boats" role="tabpanel" aria-labelledby="tab-boats" hidden>
+    <div class="boats" id="boats"></div>
+  </section>
+  <footer>
+    <p class="made">Created by Mahesh Surada, DSS Staff, Port Blair.</p>
+    <p>Timings are from the jetty notice boards (Routes I, III and IV) and the Chatham–Bambooflat vehicle ferry. Sailings can change with weather, tide and repairs, so check at the jetty for an important trip.</p>
+    <p>The 5:15 and 6:40 AM boats from Bambooflat go via Hopetown (Panighat).</p>
+    <p>Where each boat is comes from the timetable and the usual crossing times, not from GPS on the boats.</p>
+  </footer>
+</div>
+
+<div id="live" hidden>
+  <div class="appbar">
+    <button type="button" id="back" aria-label="Back to search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div><b id="lv-name"></b><small id="lv-sub"></small></div>
+  </div>
+  <div class="page">
+    <div class="status" id="lv-status" aria-live="polite"></div>
+    <div id="lv-scene"></div>
+    <div class="tlwrap" id="lv-wrap">
+      <div class="tlhead" aria-hidden="true"><span>Arrives</span><span>Leaves</span><span></span><span>Jetty</span></div>
+      <ol class="tl" id="lv-tl"></ol>
+    </div>
+    <p class="honest">Live position is worked out from the DSS timetable and the usual crossing times, not GPS. Delays from weather or tide won't show here.</p>
+    <p class="honest">Created by Mahesh Surada, DSS Staff, Port Blair.</p>
+  </div>
+</div>
+
+<script>
+// "0615 0715" → minutes after midnight
+const T = s => s.trim().split(/\s+/).map(x => +x.slice(0, 2) * 60 + +x.slice(2));
+
+// Each entry: the jetty you leave from, where it goes, passenger times, vehicle-ferry times.
+const ROUTES = [
+  { from: "Phoenix Bay", to: "Bambooflat", route: "Route III",
+    pax: T("0615 0715 0815 0915 1030 1200 1400 1515 1715 1815 1915 2015"),
+    vf:  T("0700 0900 1100 1300 1500 1700 1900") },
+  { from: "Bambooflat", to: "Phoenix Bay", route: "Route III",
+    pax: T("0515 0640 0745 0845 0945 1100 1230 1430 1545 1745 1845 1945 2045"),
+    vf:  T("0600 0800 1000 1200 1400 1600 1800 2000"),
+    via: { 315: "via Hopetown", 400: "via Hopetown" } },
+  { from: "Phoenix Bay", to: "Hopetown", route: "Route IV",
+    pax: T("0600 0700 0750 0900 1030 1200 1300 1400 1515 1615 1715 1815 1915 2015"), vf: [] },
+  { from: "Bambooflat", to: "Hopetown", route: "Route III",
+    pax: T("0515 0640"), vf: [], note: "These two boats stop at Hopetown, then go on to Phoenix Bay." },
+  { from: "Hopetown", to: "Phoenix Bay", route: "Route IV",
+    pax: T("0630 0730 0815 0930 1100 1230 1330 1430 1545 1645 1745 1845 1945 2045"), vf: [] },
+  { from: "Chatham", to: "Dandus Point", route: "Route I",
+    pax: T("0505 0550 0635 0720 0800 0900 0945 1055 1155 1250 1340 1430 1515 1600 1650 1730 1830 1930 2030"),
+    vf:  T("0615 0715 0830 1415 1640 1740 1900") },
+  { from: "Dandus Point", to: "Chatham", route: "Route I",
+    pax: T("0530 0615 0700 0740 0830 0920 1010 1120 1215 1310 1400 1445 1535 1625 1710 1750 1850 1950 2050"),
+    vf:  T("0645 0800 0900 1445 1715 1830 1930") },
+  // Vehicle ferry every 30 min. From Chatham: 5:30 AM–9:00 PM, then the last trip at 9:40 PM.
+  { from: "Chatham", to: "Bambooflat", route: "Vehicle ferry", pax: [],
+    vf: [...Array.from({ length: 32 }, (_, i) => 330 + i * 30), 1300] },
+  { from: "Bambooflat", to: "Chatham", route: "Vehicle ferry", pax: [],
+    vf: Array.from({ length: 33 }, (_, i) => 300 + i * 30) },   // 5:00 AM–9:00 PM
+];
+const JETTIES = ["Bambooflat", "Phoenix Bay", "Hopetown", "Chatham", "Dandus Point"];
+
+const sailings = r => [
+  ...r.pax.map(t => ({ t, vf: false, via: (r.via || {})[t] })),
+  ...r.vf.map(t => ({ t, vf: true })),
+].sort((a, b) => a.t - b.t || a.vf - b.vf);
+
+const fmt = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0");
+  return `${h % 12 || 12}:${mm} ${h < 12 ? "AM" : "PM"}`; };
+const wait = d => d <= 0 ? "leaving now" : d < 60 ? `in ${d} min` : `in ${Math.floor(d / 60)} h ${d % 60 ? d % 60 + " min" : ""}`.trim();
+const countdown = s => s <= 0 ? "leaving now" : s < 3600
+  ? `in ${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`
+  : `in ${Math.floor(s / 3600)} h ${Math.floor(s / 60) % 60} min`;
+
+// Ferry times are Port Blair (IST) times, whatever the phone's own time zone is.
+const ist = () => Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata",
+  weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+  .formatToParts(new Date()).map(p => [p.type, p.value]));
+const nowSec = p => (+p.hour % 24) * 3600 + +p.minute * 60 + +p.second;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const store = (k, v) => { try { v === undefined ? (v = localStorage.getItem(k)) : localStorage.setItem(k, v); } catch (e) { v = null; } return v; };
+
+let dest = "Bambooflat", tab = "route", lastMinute = -1, animateList = true;
+const routeOf = (a, b) => ROUTES.find(r => r.from === a && r.to === b);
+const destsFrom = a => ROUTES.filter(r => r.from === a).map(r => r.to);
+{ const d = store("dest"); if (JETTIES.includes(d)) dest = d; }
+const openEarlier = new Set(), shownNext = {};
+const BOAT = `<svg viewBox="0 0 26 16" aria-hidden="true"><path d="M1 10h24l-3.5 5H4.5z" fill="currentColor"/><path d="M6 10V6h12l2 4z" fill="currentColor" opacity=".85"/><rect x="9" y="2.5" width="3" height="3.5" rx=".6" fill="currentColor" opacity=".7"/></svg>`;
+
+// the trip object (with its boat) behind a timetable line; the two early Bambooflat → Hopetown boats are the Phoenix Bay boats calling there
+const tripFor = (a, b, vf, d) => TRIP[`${a}|${b}|${vf ? "vf" : "pax"}|${d}`] || (a === "Bambooflat" && b === "Hopetown" ? TRIP[`Bambooflat|Phoenix Bay|pax|${d}`] : null);
+const arrOf = tr => tr.d + tr.bo.times[0] + tr.bo.times[1];
+const typeName = b => b.type === "vf" ? "Vehicle ferry" : "Passenger ferry";
+
+// live status of one sailing, for the lists
+function tripStatus(tr, s) {
+  if (!tr) return { cls: "", text: "" };
+  const m = s / 60, arr = arrOf(tr), un = tr.bo.times[2];
+  if (m >= arr + un) return { cls: "done", text: `Reached ${fmt(arr)}` };
+  if (m >= arr) return { cls: "board", text: `Reached · ${tr.type === "pax" ? "getting off" : "unloading"}` };
+  if (m >= tr.d) return { cls: "sea", text: `At sea · ${Math.max(1, Math.ceil(arr - m))} min to go` };
+  if (tr.bo.trips.find(x => x.d * 60 > s) !== tr) return { cls: "", text: "" };   // the boat has other trips first
+  const v = vesselState(tr.bo.trips, tr.bo.times, s);
+  if (v.kind === "load" && v.d === tr.d) return { cls: tr.d - m <= 10 ? "soon" : "board", text: tr.type === "pax" ? "Boarding now" : "Loading now" };
+  if (v.kind === "sail" || v.kind === "arrive" || v.kind === "cast") return { cls: "", text: `Coming from ${v.a}` };
+  if (v.kind === "unload") return { cls: "", text: `At ${v.b}` };
+  return { cls: "", text: "On time" };
+}
+// one line on where a boat is now
+function boatLine(b, s) {
+  const v = vesselState(b.trips, b.times, s), m = s / 60;
+  if (v.kind === "load") return { big: `${b.type === "pax" ? "Boarding" : "Loading"} at ${v.a}`, sub: `Leaves for ${v.b} at ${fmt(v.d)} · ${wait(Math.ceil(v.d - m))}`, v };
+  if (v.kind === "cast") return { big: `Leaving ${v.a}`, sub: `Left at ${fmt(v.d)} · reaches ${v.b} about ${fmt(v.arr)}`, v };
+  if (v.kind === "sail" || v.kind === "arrive") return { big: `At sea to ${v.b}`, sub: `Left ${v.a} ${fmt(v.d)} · arrives ${fmt(v.arr)} · ${Math.max(1, Math.ceil(v.arr - m))} min to go`, v,
+    pct: Math.min(100, (m - v.d) / (v.arr - v.d) * 100) };
+  if (v.kind === "unload") return { big: `Reached ${v.b}`, sub: `${b.type === "pax" ? "Passengers getting off" : "Unloading"} · arrived ${fmt(v.arr)}`, v };
+  return { big: `Docked at ${v.a}`, sub: `No more trips today · first trip tomorrow ${fmt(b.trips[0].d)}`, v };
+}
+
+// ── home: jetty to jetty ──
+function movePill() {
+  const b = document.querySelector('#chips button[aria-pressed="true"]'), pill = document.getElementById("pill");
+  if (!b) return;
+  pill.style.width = b.offsetWidth + "px"; pill.style.height = b.offsetHeight + "px";
+  pill.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
+}
+function renderChips() {
+  const box = document.getElementById("chips");
+  box.querySelectorAll("button").forEach(b => b.remove());
+  box.insertAdjacentHTML("beforeend", JETTIES.map(d => `<button type="button" aria-pressed="${d === dest}" data-dest="${d}">${d}</button>`).join(""));
+  movePill();
+}
+function rowHTML(from, to, s, now, sec, i) {
+  const tr = tripFor(from, to, s.vf, s.t), st = tripStatus(tr, sec), b = tr && tr.bo;
+  return `<li${animateList && i < 12 ? ` class="rise" style="--i:${i + 2}"` : ""}><button type="button" class="sl"${b ? ` data-boat="${b.uid}" data-trip="${tr.d}"` : ""}>
+    <span class="t">${fmt(s.t)}</span>
+    <span class="who"><span>${b ? b.label : s.vf ? "Vehicle ferry" : "Passenger ferry"}</span><small>${s.vf ? "Vehicle ferry" : "Passenger"}${s.via ? " · " + s.via : ""}</small></span>
+    <span class="chip ${st.cls}">${st.text || (s.t >= now ? wait(s.t - now) : "Left")}</span></button></li>`;
+}
+function routeHTML(from, to, now, sec) {
+  const r = routeOf(from, to), all = sailings(r), ahead = all.filter(s => s.t >= now), gone = all.filter(s => s.t < now);
+  // still on its way: departed but not yet arrived → keep it at the top
+  const going = gone.filter(s => { const tr = tripFor(from, to, s.vf, s.t); return tr && sec / 60 < arrOf(tr) + tr.bo.times[2]; });
+  const past = gone.filter(s => !going.includes(s));
+  const nx = ahead[0], key = from + ">" + to, ntr = nx && tripFor(from, to, nx.vf, nx.t);
+  const flip = nx && shownNext[key] !== undefined && shownNext[key] !== nx.t;
+  shownNext[key] = nx ? nx.t : null;
+  const prev = gone.length ? gone[gone.length - 1].t : nx ? Math.max(0, nx.t - 60) : 0;
+  const next = nx
+    ? `<div class="next${nx.t - now <= 10 ? " soon" : ""}" data-t="${nx.t}" data-prev="${prev}"${ntr ? ` data-boat="${ntr.bo.uid}" data-trip="${ntr.d}"` : ""} role="button" tabindex="0">
+         <div class="label">${nx.t - now <= 10 ? "Leaving soon" : "Next ferry"} · tap for live status</div>
+         <div class="row"><span class="flip${flip || animateList ? " go" : ""}"><span>${fmt(nx.t)}</span></span><span class="count"></span></div>
+         <div class="kind">${ntr ? ntr.bo.label + " · " : ""}${nx.vf ? "Vehicle ferry" : "Passenger ferry"}${nx.via ? " · " + nx.via : ""}</div>
+         <div class="track"><i></i>${BOAT}</div>
+       </div>`
+    : `<div class="next none"><div class="label">No more ferries today</div>
+         <div class="row"><span class="flip"><span>First tomorrow: ${fmt(all[0].t)}</span></span></div></div>`;
+  const scene = ntr ? voyageFig(ntr.bo, ntr.d, ntr.a) : "";
+  return `<section class="jetty${animateList ? " rise" : ""}">
+    <h2><small>Leave from · ${r.route}</small>${from} jetty</h2>
+    ${next}
+    ${scene}
+    ${r.note ? `<div class="note">${r.note}</div>` : ""}
+    ${going.length || ahead.length > 1 ? `<ul class="list">${[...going, ...ahead.slice(1)].map((s, i) => rowHTML(from, to, s, now, sec, i)).join("")}</ul>` : ""}
+    ${past.length ? `<details data-key="${key}"${openEarlier.has(key) ? " open" : ""}>
+       <summary>Earlier today (${past.length})</summary>
+       <ul class="list">${past.map(s => rowHTML(from, to, s, now, sec, 99)).join("")}</ul></details>` : ""}
+  </section>`;
+}
+// ── home: spot your ferry ──
+function boatsHTML(sec) {
+  const named = BOATS.filter(b => b.name), rest = BOATS.filter(b => !b.name);
+  return [...named, ...rest].map(b => { const L = boatLine(b, sec), [a, c] = b.pair.split("|");
+    return `<button type="button" class="boat" data-boat="${b.uid}"><b>${b.label}</b><small>${typeName(b)} · ${a} ⇄ ${c}</small>
+      <span class="line">${L.big} · <span style="color:var(--muted)">${L.sub}</span></span>${L.pct !== undefined ? `<span class="bar2"><i style="width:${L.pct}%"></i></span>` : ""}</button>`; }).join("");
+}
+
+function render(p) {
+  const sec = nowSec(p), now = Math.floor(sec / 60);
+  lastMinute = now;
+  document.getElementById("clock").innerHTML = `${p.weekday} ${p.day} ${p.month} · <b>${fmt(now)}</b> Port Blair time`;
+  if (!document.getElementById("live").hidden) { renderLive(sec, false); return; }
+  if (tab === "route") document.getElementById("out").innerHTML = ROUTES.filter(r => r.to === dest).map(r => routeHTML(r.from, r.to, now, sec)).join("");
+  else document.getElementById("boats").innerHTML = boatsHTML(sec);
+  animateList = false;
+  if (reduced) document.querySelectorAll(".voyage").forEach(f => drawVoyage(f, 0));
+  tick(p);
+}
+
+// every second: countdowns, wait bars, the live marker (no re-render)
+function tick(p) {
+  const s = nowSec(p);
+  if (reduced) document.querySelectorAll(".voyage").forEach(f => drawVoyage(f, 0));
+  document.querySelectorAll(".next[data-t]").forEach(card => {
+    const t = +card.dataset.t * 60, prev = +card.dataset.prev * 60;
+    card.querySelector(".count").textContent = countdown(t - s);
+    const pct = Math.min(100, Math.max(0, (s - prev) / Math.max(60, t - prev) * 100));
+    card.querySelector(".track i").style.width = pct + "%";
+    card.querySelector(".track svg").style.left = pct + "%";
+  });
+  if (!document.getElementById("live").hidden) placeMarker(s);
+}
+
+// ── live running status of one boat (its whole day: every jetty call, where it is now) ──
+let live = null;   // { b, d }
+function stopsOf(b) {
+  const rows = [];
+  b.trips.forEach((tr, i) => {
+    const last = rows[rows.length - 1];
+    if (last && last.j === tr.a && last.dep === null) { last.dep = tr.d; tr.row = rows.length - 1; }
+    else { rows.push({ j: tr.a, arr: null, dep: tr.d }); tr.row = rows.length - 1; }
+    rows.push({ j: tr.b, arr: arrOf(tr), dep: null, via: tr.via });
+  });
+  return rows;
+}
+// where on the timeline: row index + fraction towards the next row
+function posOf(b, s) {
+  const v = vesselState(b.trips, b.times, s), tr = b.trips.find(x => x.d === v.d && x.a === v.a);
+  if (v.kind === "night" || !tr) return { row: b.rows.length - 1, f: 0, v };
+  if (v.kind === "load") return { row: tr.row, f: 0, v };
+  if (v.kind === "unload") return { row: tr.row + 1, f: 0, v };
+  const m = s / 60, f = Math.min(.98, Math.max(.02, (m - tr.d) / (arrOf(tr) - tr.d)));
+  return { row: tr.row, f, v };
+}
+function openLive(uid, d) { location.hash = `ferry=${encodeURIComponent(uid)}${d !== undefined && d !== "" ? "&t=" + d : ""}`; }
+function route() {
+  const h = new URLSearchParams(location.hash.slice(1)), b = BY_ID[h.get("ferry")];
+  const isLive = !!b;
+  document.getElementById("live").hidden = !isLive;
+  document.getElementById("home").hidden = isLive;
+  document.getElementById("hero").hidden = isLive;
+  if (isLive) { live = { b, d: h.has("t") ? +h.get("t") : null }; scrollTo(0, 0); renderLive(nowSec(ist()), true); }
+  else { live = null; animateList = true; render(ist()); requestAnimationFrame(movePill); }
+}
+function renderLive(sec, first) {
+  const { b, d } = live, [a, c] = b.pair.split("|"), L = boatLine(b, sec);
+  if (!b.rows) b.rows = stopsOf(b);
+  const sel = d !== null ? b.trips.find(tr => tr.d === d) : null;
+  document.getElementById("lv-name").textContent = b.label;
+  document.getElementById("lv-sub").textContent = `${typeName(b)} · ${a} ⇄ ${c}`;
+  let mine = "";
+  if (sel) { const ts = tripStatus(sel, sec);
+    mine = `<div class="mine">Your ferry: <b>${fmt(sel.d)}</b> ${sel.a} → ${sel.b} · ${ts.text || wait(Math.ceil(sel.d - sec / 60))}${ts.text && sel.d * 60 > sec ? " · " + wait(Math.ceil(sel.d - sec / 60)) : ""}</div>`; }
+  document.getElementById("lv-status").innerHTML = `<div class="big">${L.big}</div><div class="sub">${L.sub}</div>${mine}`;
+  if (first) document.getElementById("lv-scene").innerHTML = voyageFig(b, sel ? sel.d : "", sel ? sel.a : "");
+  const P = posOf(b, sec);
+  document.getElementById("lv-tl").innerHTML = b.rows.map((r, i) => {
+    const isSel = sel && (i === sel.row || i === sel.row + 1);
+    const past = i < P.row || (i === P.row && P.f > 0);
+    const what = past ? (r.dep !== null ? "Departed" : "Arrived") : r.arr === null ? "First trip of the day" : r.dep === null ? "Last stop today" : "";
+    const now = i === P.row && P.f === 0 ? (P.v.kind === "load" ? (b.type === "pax" ? "Boarding now" : "Loading now") : P.v.kind === "unload" ? "Arrived · getting off" : "Here now") : "";
+    return `<li class="stop${past ? " past" : ""}${isSel ? " sel" : ""}${i === P.row ? " cur" : ""}">
+      <span class="tm${r.arr === null ? " nil" : ""}">${r.arr === null ? "—" : fmt(r.arr)}</span>
+      <span class="tm${r.dep === null ? " nil" : ""}">${r.dep === null ? "—" : fmt(r.dep)}</span>
+      <span class="ln"></span>
+      <span class="jt"><b>${r.j}</b>${now || what || r.via ? `<small>${[now || what, r.via].filter(Boolean).join(" · ")}</small>` : ""}${isSel ? `<em>Your ferry ${i === sel.row ? "leaves" : "reaches"}</em>` : ""}</span></li>`; }).join("") + `<span class="marker" id="marker">${BOAT}</span>`;
+  placeMarker(sec);
+  if (first) requestAnimationFrame(() => { const cur = document.querySelector(".stop.cur"), w = document.getElementById("lv-wrap");
+    if (cur) w.scrollTop = Math.max(0, cur.offsetTop - w.clientHeight / 2 + cur.offsetHeight); });
+}
+function placeMarker(sec) {
+  if (!live) return;
+  const P = posOf(live.b, sec), rows = document.querySelectorAll("#lv-tl .stop"), mk = document.getElementById("marker");
+  if (!rows[P.row] || !mk) return;
+  const y0 = rows[P.row].offsetTop + rows[P.row].offsetHeight / 2, n = rows[P.row + 1];
+  const y = n ? y0 + (n.offsetTop + n.offsetHeight / 2 - y0) * P.f : y0, ln = rows[P.row].querySelector(".ln");
+  mk.style.top = y + "px"; mk.style.left = (ln.offsetLeft + ln.offsetWidth / 2) + "px";
+}
+
+// ── events ──
+document.getElementById("tab-route").parentElement.addEventListener("click", e => {
+  const b = e.target.closest("[role=tab]"); if (!b) return;
+  tab = b.id === "tab-boats" ? "boats" : "route";
+  document.querySelectorAll("[role=tab]").forEach(x => x.setAttribute("aria-selected", x === b));
+  document.getElementById("pane-route").hidden = tab !== "route"; document.getElementById("pane-boats").hidden = tab !== "boats";
+  animateList = true; render(ist()); requestAnimationFrame(movePill);
+});
+document.getElementById("chips").addEventListener("click", e => {
+  const b = e.target.closest("button[data-dest]"); if (!b || b.dataset.dest === dest) return;
+  dest = b.dataset.dest; store("dest", dest); openEarlier.clear(); animateList = true;
+  document.querySelectorAll("#chips button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  movePill(); render(ist());
+});
+addEventListener("resize", movePill);
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-boat]"); if (t && !t.closest("#live")) openLive(t.dataset.boat, t.dataset.trip);
+});
+document.addEventListener("keydown", e => { const t = e.target.closest && e.target.closest(".next[data-boat]"); if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openLive(t.dataset.boat, t.dataset.trip); } });
+document.getElementById("back").addEventListener("click", () => { history.length > 1 && location.hash ? history.back() : (location.hash = ""); });
+addEventListener("hashchange", route);
+document.getElementById("out").addEventListener("toggle", e => {
+  const d = e.target; if (!d.dataset || !d.dataset.key) return;
+  d.open ? openEarlier.add(d.dataset.key) : openEarlier.delete(d.dataset.key);
+}, true);
+
+// ── Harbour scene: sky by time of day, three layers of swell, a ferry riding the middle one ──
+const SKIES = [   // [from minute, sky top, sky bottom, text, sea tint]
+  [0,    "#07131f", "#15304a", "#ffffff", [18, 52, 74]],    // night
+  [330,  "#f2b48a", "#86b8cb", "#10283a", [40, 98, 122]],    // dawn 5:30
+  [420,  "#7fc3db", "#d6eef4", "#0f2a33", [16, 108, 130]],   // day 7:00
+  [1020, "#ef9f6a", "#5d6f9b", "#ffffff", [44, 70, 108]],    // dusk 5:00 PM
+  [1140, "#07131f", "#15304a", "#ffffff", [18, 52, 74]],     // night 7:00 PM
+];
+let sky = SKIES[0];
+function setSky(min) {
+  sceneMin = min;
+  sky = SKIES.filter(s => s[0] <= min).pop();
+  const h = document.getElementById("hero").style;
+  h.setProperty("--sky1", sky[1]); h.setProperty("--sky2", sky[2]); h.setProperty("--hero-ink", sky[3]);
+}
+
+const cv = document.getElementById("sea"), ctx = cv.getContext("2d");
+let W = 0, H = 0, running = true, sceneMin = 600, skyTop = 0;   // skyTop: top of the free sky band under the text
+function size() {
+  const dpr = Math.min(devicePixelRatio || 1, 2), r = cv.getBoundingClientRect();
+  W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  skyTop = document.querySelector(".credit").getBoundingClientRect().bottom - r.top + 10;
+}
+const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(7);   // fixed seed: stars stay put
+const STARS = Array.from({ length: 46 }, () => ({ x: rnd(), y: rnd() * .62, r: .5 + rnd() * 1.1, ph: rnd() * 6.3 }));
+const GULLS = Array.from({ length: 3 }, (_, i) => ({ dy: 10 + i * 12, spd: 22 + i * 7, off: i * 260, size: 1 - i * .18, ph: i * 1.7 }));
+const ripples = [];
+
+// three layers of swell: y of layer L at x, time t (s)
+const LAYERS = [ { base: .72, amp: 6, len: 230, spd: .35, a: .45 }, { base: .81, amp: 7, len: 170, spd: .55, a: .7 }, { base: .91, amp: 5, len: 120, spd: .8, a: .95 } ];
+const swell = (L, x, t) => H * L.base + Math.sin(x / L.len * 6.283 + t * L.spd) * L.amp + Math.sin(x / (L.len * .53) - t * L.spd * 1.3) * L.amp * .35;
+
+const isNight = m => m < 330 || m >= 1140;
+// sun 6:00 AM–6:00 PM and moon 6:00 PM–6:00 AM ride the same arc, rising and setting behind the sea,
+// kept inside the sky band below the text so they never sit behind it
+function arcPos(m) {
+  const f = (((m - 360) % 720) + 720) % 720 / 720, base = H * .76;
+  return { x: W * (.08 + .84 * f), y: base - Math.sin(Math.PI * f) * Math.max(10, base - skyTop - 16) };
+}
+function drawSky(t) {
+  const night = isNight(sceneMin), p = arcPos(sceneMin);
+  if (night) {
+    STARS.forEach(st => {
+      ctx.globalAlpha = .35 + .45 * (reduced ? .5 : (Math.sin(t * 1.3 + st.ph) + 1) / 2);
+      ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(st.x * W, st.y * H, st.r, 0, 6.283); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    const g = ctx.createRadialGradient(p.x, p.y, 4, p.x, p.y, 46);
+    g.addColorStop(0, "rgba(235,240,255,.28)"); g.addColorStop(1, "rgba(235,240,255,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, 46, 0, 6.283); ctx.fill();
+    ctx.fillStyle = "#eef1f8"; ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, 6.283); ctx.fill();
+    ctx.fillStyle = sky[2]; ctx.beginPath(); ctx.arc(p.x + 5, p.y - 3, 10, 0, 6.283); ctx.fill();   // crescent
+  } else {
+    const warm = sceneMin < 420 || sceneMin >= 1020;
+    const g = ctx.createRadialGradient(p.x, p.y, 6, p.x, p.y, 60);
+    g.addColorStop(0, warm ? "rgba(255,214,150,.75)" : "rgba(255,250,225,.8)");
+    g.addColorStop(1, "rgba(255,240,200,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, 60, 0, 6.283); ctx.fill();
+    ctx.fillStyle = warm ? "#ffd08a" : "#fffbe8"; ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, 6.283); ctx.fill();
+    // seagulls: slow crossings, wings flapping
+    ctx.strokeStyle = "rgba(20,40,52,.55)"; ctx.lineWidth = 1.6; ctx.lineCap = "round";
+    GULLS.forEach(g2 => {
+      const span = W + 80, x = ((t * g2.spd + g2.off) % span) - 40;
+      const y = skyTop + g2.dy + Math.sin(t * .7 + g2.ph) * 3, w = 9 * g2.size, flap = Math.sin(t * 6 + g2.ph) * 4 * g2.size;
+      ctx.beginPath(); ctx.moveTo(x - w, y - flap * .4); ctx.quadraticCurveTo(x - w / 2, y - 3 - flap, x, y);
+      ctx.quadraticCurveTo(x + w / 2, y - 3 - flap, x + w, y - flap * .4); ctx.stroke();
+    });
+  }
+}
+
+function drawBoat(t) {
+  const L = LAYERS[1], span = W + 120, x = ((t * 14 + span * .4) % span) - 60;   // starts a third of the way across
+  const y = swell(L, x, t), tilt = Math.atan2(swell(L, x + 6, t) - swell(L, x - 6, t), 12);
+  // wake: foam streaks fading out behind the stern
+  for (let i = 1; i <= 7; i++) {
+    const wx = x - 22 - i * 9, wy = swell(L, wx, t) + 1;
+    ctx.strokeStyle = `rgba(255,255,255,${.5 - i * .06})`; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(wx - 4, wy); ctx.lineTo(wx + 4, wy + Math.sin(t * 4 + i) * .8); ctx.stroke();
+  }
+  const [r, g, b] = sky[4];
+  ctx.save(); ctx.translate(x, y - 2); ctx.rotate(tilt);
+  ctx.fillStyle = `rgba(${r * .35 | 0},${g * .35 | 0},${b * .35 | 0},.92)`;
+  ctx.beginPath(); ctx.moveTo(-26, -6); ctx.lineTo(26, -6); ctx.lineTo(19, 3); ctx.lineTo(-19, 3); ctx.closePath(); ctx.fill();   // hull
+  ctx.fillRect(-15, -14, 26, 8);                                                                                                  // cabin
+  ctx.fillRect(-6, -20, 5, 6);                                                                                                    // funnel
+  ctx.fillStyle = isNight(sceneMin) ? "rgba(255,226,140,.95)" : "rgba(255,236,170,.6)";                                          // windows
+  for (let i = 0; i < 4; i++) ctx.fillRect(-12 + i * 6, -12, 3, 3);
+  if (!reduced) {   // a puff of smoke drifting back from the funnel
+    for (let i = 0; i < 3; i++) {
+      const k = ((t * .6 + i / 3) % 1);
+      ctx.fillStyle = `rgba(255,255,255,${.35 * (1 - k)})`;
+      ctx.beginPath(); ctx.arc(-4 - k * 16, -22 - k * 10, 2 + k * 4, 0, 6.283); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawGlints(t) {   // sunlight sparkling on the near swell, daytime only
+  if (isNight(sceneMin) || reduced) return;
+  const L = LAYERS[2];
+  for (let i = 0; i < 14; i++) {
+    const x = (i * 97 + 31) % Math.max(W, 1), a = Math.max(0, Math.sin(t * 1.7 + i * 2.1));
+    if (a < .55) continue;
+    const y = swell(L, x, t) + 6 + (i % 3) * 7;
+    ctx.strokeStyle = `rgba(255,255,255,${(a - .55) * 1.6})`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.stroke();
+  }
+}
+
+function drawRipples(t) {
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const rp = ripples[i], age = t - rp.t0;
+    if (age > 2.4) { ripples.splice(i, 1); continue; }
+    for (let k = 0; k < 3; k++) {
+      const a2 = age - k * .25; if (a2 < 0) continue;
+      const rx = 8 + a2 * 70;
+      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, .55 * (1 - a2 / 2.2))})`; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(rp.x, rp.y, rx, rx * .28, 0, 0, 6.283); ctx.stroke();
+    }
+  }
+}
+
+let clockT = 0;
+function frame(ms) {
+  const t = ms / 1000, [r, g, b] = sky[4]; clockT = t;
+  ctx.clearRect(0, 0, W, H);
+  drawSky(t);
+  LAYERS.forEach((L, i) => {
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (let x = 0; x <= W + 8; x += 8) ctx.lineTo(x, swell(L, x, t));
+    ctx.lineTo(W, H); ctx.closePath();
+    const k = .75 + i * .12;
+    ctx.fillStyle = `rgba(${r * k | 0},${g * k | 0},${b * k | 0},${L.a})`; ctx.fill();
+    if (i === 1) drawBoat(t);
+  });
+  drawGlints(t); drawRipples(t);
+  if (running && !reduced) requestAnimationFrame(frame);
+}
+function startSea() { size(); running = true; requestAnimationFrame(frame); }
+new ResizeObserver(() => { size(); if (reduced) frame(0); }).observe(cv);
+new IntersectionObserver(([e]) => { const was = running; running = e.isIntersecting && !document.hidden; if (running && !was && !reduced) requestAnimationFrame(frame); }).observe(cv);
+document.addEventListener("visibilitychange", () => { const was = running; running = !document.hidden; if (running && !was && !reduced) requestAnimationFrame(frame); });
+
+// tap the sea → ripples (taps on the sky land on the water line below them)
+document.getElementById("hero").addEventListener("pointerdown", e => {
+  if (reduced) return;
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
+  const y = Math.max(e.clientY - r.top, swell(LAYERS[1], x, clockT) + 8);
+  ripples.push({ x, y, t0: clockT });
+  if (ripples.length > 8) ripples.shift();
+  document.getElementById("hint").classList.add("gone");
+});
+if (reduced) document.getElementById("hint").hidden = true;
+
+// ── Vehicle ferry voyage: departure jetty (left) → arrival jetty (right), looping in three steps ──
+// ── Vehicle ferry scene, driven by the real timetable ──
+// Times from DSS staff, in minutes: [casting off after the departure time, at sea, unloading]
+const VTIMES = { "Chatham|Bambooflat": [0, 14, 5], "Bambooflat|Chatham": [0, 14, 5], "Chatham|Dandus Point": [0, 10, 5] }, VTIME_DEFAULT = [5, 35, 8];
+// The boats on each crossing (key = the two jetties in A–Z order). With two boats, the first name is the one
+// that starts the day at Bambooflat (5:00 AM); the other leaves Chatham on the hour.
+const VNAMES = { "Bambooflat|Chatham": ["MV MUS", "MV NORTH BAY"], "Bambooflat|Phoenix Bay": ["MV PILOBHABI"] };
+// Passenger boats (blue hull, white cabins): [casting off, at sea, getting off] — estimates, change here
+const PTIMES = { "Bambooflat|Phoenix Bay": [0, 20, 3], "Hopetown|Phoenix Bay": [0, 15, 3], "Bambooflat|Hopetown": [0, 10, 3],
+                 "Chatham|Dandus Point": [0, 10, 3] }, PTIME_DEFAULT = [0, 15, 3];
+const PNAMES = { "Hopetown|Phoenix Bay": ["MV SHER ALI"], "Bambooflat|Hopetown": ["MV SHER ALI"],
+                 "Bambooflat|Phoenix Bay": ["MV DUGONG"], "Chatham|Dandus Point": ["MV PADAUK"] };
+const LOAD_FILL_MIN = 30;
+
+function voyageFig(b, d, a) {
+  return `<figure class="voyage" data-boat="${b.uid}" data-trip="${d}" data-from="${a}" role="img"
+            aria-label="${b.label}, shown where it is now by the timetable">
+    <canvas aria-hidden="true"></canvas>
+    <figcaption class="step"><b>•</b><span></span></figcaption>
+    <div class="vcap"></div></figure>`;
+}
+
+// every boat in the harbour, with the trips it makes today (boats are matched to trips by who is free at that jetty)
+const BOATS = [], BY_ID = {}, TRIP = {};
+function buildAll() {
+  const groups = {};
+  for (const r of ROUTES) {
+    if (r.from === "Bambooflat" && r.to === "Hopetown") continue;            // same boats as Bambooflat → Phoenix Bay via Hopetown
+    const pair = [r.from, r.to].sort().join("|");
+    for (const type of ["vf", "pax"]) for (const d of r[type])
+      (groups[pair + "#" + type] = groups[pair + "#" + type] || []).push({ d, a: r.from, b: r.to, type, fwd: 0, via: type === "pax" ? (r.via || {})[d] : undefined });
+  }
+  for (const [key, trips] of Object.entries(groups)) {
+    const [pair, type] = key.split("#"), [x, y] = pair.split("|");
+    const times = type === "vf" ? (VTIMES[x + "|" + y] || VTIMES[y + "|" + x] || VTIME_DEFAULT) : (PTIMES[pair] || PTIME_DEFAULT);
+    const fleet = buildFleet(trips, times, type, times, (type === "vf" ? VNAMES : PNAMES)[pair] || []);
+    fleet.forEach((b, i) => {
+      b.pair = pair; b.uid = `${type}-${pair.replace(/[^A-Za-z|]/g, "").replace("|", "-")}-${i + 1}`;
+      b.label = b.name || `${type === "vf" ? "Vehicle ferry" : "Passenger boat"}${fleet.length > 1 ? " " + (i + 1) : ""}`;
+      b.trips.sort((p, q) => p.d - q.d); BOATS.push(b); BY_ID[b.uid] = b;
+    });
+    trips.forEach(tr => { TRIP[`${tr.a}|${tr.b}|${tr.type}|${tr.d}`] = tr; });
+  }
+}
+
+// Where the vehicle ferry is now (s = seconds since midnight, Port Blair time).
+// trips: this direction first, then the return trips. A trip = cast off → at sea → unload; between trips it loads.
+function buildFleet(trips, [cast, cross, unload], type, times, names) {
+  const boats = [];
+  for (const tr of trips.slice().sort((p, q) => p.d - q.d)) {
+    let b = boats.filter(x => x.at === tr.a && x.free <= tr.d).sort((p, q) => p.free - q.free)[0];
+    if (!b) boats.push(b = { id: boats.length, at: tr.a, free: 0, trips: [], type, times, name: names[boats.length] || "" });
+    tr.bo = b; b.trips.push(tr); b.at = tr.b; b.free = tr.d + cast + cross + unload;
+  }
+  return boats;
+}
+const VIS_CAST = 1.5, VIS_ARRIVE = 1.5;   // min of the crossing drawn at the jetty: leaving, and coming alongside
+function vesselState(trips, [cast, cross, unload], s) {
+  const m = s / 60;
+  for (const tr of trips) {
+    const tc = tr.d + cast, ta = tc + cross, tu = ta + unload, x = { ...tr, arr: ta };
+    if (m < tr.d || m >= tu) continue;
+    if (m < tc) return { ...x, kind: "cast", k: (m - tr.d) / cast };
+    if (m < ta) {
+      if (!cast && m < tc + VIS_CAST) return { ...x, kind: "cast", k: (m - tc) / VIS_CAST, quick: true };
+      if (m >= ta - VIS_ARRIVE) return { ...x, kind: "arrive", k: 1 - (ta - m) / VIS_ARRIVE };
+      return { ...x, kind: "sail", k: (m - tc) / cross, left: ta - m };
+    }
+    return { ...x, kind: "unload", k: (m - ta) / unload };
+  }
+  const next = trips.filter(tr => tr.d > m).sort((p, q) => p.d - q.d || q.fwd - p.fwd)[0];
+  if (next) return { ...next, arr: next.d + cast + cross, kind: "load", left: (next.d - m) * 60, k: Math.max(.08, 1 - Math.min(1, (next.d - m) / LOAD_FILL_MIN)) };
+  const last = trips.slice().sort((p, q) => q.d - p.d)[0];
+  return { kind: "night", a: last.b, b: last.a };
+}
+
+const VOY = new WeakMap();
+const ease = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+const vrand = seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+function ridge(g, w, hz, amp, seed, fill, dip) {
+  g.beginPath(); g.moveTo(0, hz + 1);
+  for (let x = 0; x <= w + 4; x += 3) {
+    const u = x / w;
+    const n = .55 * Math.sin(u * 3.1 + seed) + .3 * Math.sin(u * 7.3 + seed * 2.3) + .15 * Math.sin(u * 17 + seed * 3.1)
+            + .07 * Math.sin(x * .55 + seed);                                   // tree-canopy texture
+    const fall = dip ? 1 - .55 * Math.exp(-Math.pow((u - .5) / .18, 2)) : 1;   // lower in the middle of the bay
+    g.lineTo(x, hz - amp * fall * (.55 + .45 * n));
+  }
+  g.lineTo(w, hz + 1); g.closePath(); g.fillStyle = fill; g.fill();
+}
+
+function jetty(g, w, h, side, name, night, pw = w * .17) {
+  const x0 = side === "L" ? 0 : w - pw, deckY = h * .6, deckH = h * .03;
+  for (let i = 0; i < 5; i++) {                                                 // piles
+    const px = x0 + 5 + i * (pw - 14) / 4, gr = g.createLinearGradient(0, deckY, 0, h);
+    gr.addColorStop(0, "#59636d"); gr.addColorStop(1, "rgba(30,45,60,.25)");
+    g.fillStyle = gr; g.fillRect(px, deckY + deckH, 4, h - deckY);
+  }
+  g.fillStyle = "#c6ccd2"; g.fillRect(x0, deckY, pw, deckH);                     // deck
+  g.fillStyle = "#e4e8ec"; g.fillRect(x0, deckY, pw, 2);
+  g.fillStyle = "#8d969f"; g.fillRect(x0, deckY + deckH - 3, pw, 3);
+  const fx = side === "L" ? x0 + pw - 4 : x0;                                   // tyre fenders at the berth
+  g.fillStyle = "#1e2226"; for (let i = 0; i < 2; i++) { g.beginPath(); g.arc(fx + 2, deckY + deckH + 4 + i * 8, 3.2, 0, 6.283); g.fill(); }
+  const bx = x0 + pw * .1, bw = pw * .8, bh = h * .085, by = deckY - bh;         // terminal building
+  g.fillStyle = night ? "#9aa6b2" : "#eef1f3"; g.fillRect(bx, by, bw, bh);
+  for (let i = 0; i < 4; i++) { g.fillStyle = night ? "#ffd27a" : "#3d6286"; g.fillRect(bx + 4 + i * (bw - 8) / 4, by + bh * .3, (bw - 8) / 4 - 4, bh * .32); }
+  g.fillStyle = "#1f4ea6"; g.beginPath();                                       // blue roof
+  g.moveTo(bx - 5, by); g.lineTo(bx + bw + 5, by); g.lineTo(bx + bw - 2, by - 7); g.lineTo(bx + 2, by - 7); g.closePath(); g.fill();
+  g.fillStyle = "#3d72cf"; g.fillRect(bx + 2, by - 7, bw - 4, 1.5);
+  // name board on two posts
+  const sw = Math.max(w * .25, pw * .95), sh = h * .12, scx = Math.min(Math.max(x0 + pw / 2, sw / 2 + 4), w - sw / 2 - 4);
+  const sy = by - 9 - h * .035 - sh;
+  g.fillStyle = "#6d7680"; g.fillRect(scx - sw * .3, sy + sh, 2.5, by - 7 - sy - sh); g.fillRect(scx + sw * .3, sy + sh, 2.5, by - 7 - sy - sh);
+  g.fillStyle = "#1c3d8f"; g.fillRect(scx - sw / 2, sy, sw, sh);
+  g.strokeStyle = "#ffffff"; g.lineWidth = 1.5; g.strokeRect(scx - sw / 2 + 2.5, sy + 2.5, sw - 5, sh - 5);
+  g.fillStyle = "#ffffff"; g.textAlign = "center"; g.textBaseline = "middle";
+  let fs = sh * .36; g.font = `700 ${fs}px Inter, system-ui, sans-serif`;
+  while (g.measureText(name.toUpperCase()).width > sw - 12 && fs > 6) { fs -= .5; g.font = `700 ${fs}px Inter, system-ui, sans-serif`; }
+  g.fillText(name.toUpperCase(), scx, sy + sh * .37);
+  g.font = `600 ${fs * .8}px Inter, system-ui, sans-serif`; g.fillText("JETTY", scx, sy + sh * .72);
+  if (night) {                                                                   // lamp glow
+    const lx = side === "L" ? x0 + pw - 10 : x0 + 10, gl = g.createRadialGradient(lx, deckY - 18, 1, lx, deckY - 18, 26);
+    gl.addColorStop(0, "rgba(255,220,140,.85)"); gl.addColorStop(1, "rgba(255,220,140,0)");
+    g.fillStyle = "#59636d"; g.fillRect(lx - 1, deckY - 18, 2, 18); g.fillStyle = gl; g.beginPath(); g.arc(lx, deckY - 18, 26, 0, 6.283); g.fill();
+  }
+}
+
+// mode: "L" / "R" = one jetty on that side (named), "sea" = open water, hills drawn moving each frame
+function buildVoyageBg(st, mode, name) {
+  const { w, h, dpr } = st, night = isNight(sceneMin), c = document.createElement("canvas");
+  c.width = w * dpr; c.height = h * dpr; const g = c.getContext("2d"); g.scale(dpr, dpr);
+  const hz = h * .46;
+  let gr = g.createLinearGradient(0, 0, 0, hz); gr.addColorStop(0, sky[1]); gr.addColorStop(1, sky[2]);
+  g.fillStyle = gr; g.fillRect(0, 0, w, hz + 2);
+  if (mode !== "sea") hills(g, w, hz, h, night, 0);
+  gr = g.createLinearGradient(0, hz, 0, h);
+  gr.addColorStop(0, night ? "#1b3a4a" : "#7fb8b4"); gr.addColorStop(.35, night ? "#123040" : "#3f8f8c"); gr.addColorStop(1, night ? "#061a24" : "#1a5f68");
+  g.fillStyle = gr; g.fillRect(0, hz, w, h - hz);
+  g.fillStyle = night ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.35)"; g.fillRect(0, hz, w, 1);
+  if (mode === "L" || mode === "R") jetty(g, w, h, mode, name, night, w * JW);
+  return c;
+}
+function hills(g, w, hz, h, night, off) {
+  g.save(); g.translate(-off % w, 0);
+  for (const dx of off ? [0, w] : [0]) {
+    g.save(); g.translate(dx, 0);
+    ridge(g, w, hz, h * .11, 1.3, night ? "#1d3446" : "#86a9b4", false);
+    ridge(g, w, hz, h * .15, 4.1, night ? "#0d2219" : "#2d6a39", !off);
+    ridge(g, w, hz, h * .07, 9.7, night ? "#0a1c14" : "#245a30", !off);
+    g.restore();
+  }
+  g.restore();
+}
+const JW = .27, FS = .0034;   // close-up: jetty width and ferry scale, as parts of the scene width
+
+// What each vehicle ferry carries, by direction (DSS rules). Chatham ↔ Bambooflat: two-wheelers and passengers only.
+// Phoenix Bay → Bambooflat: no two-wheelers. Bambooflat → Phoenix Bay: cars, autos and two-wheelers.
+const VLOAD = { "Phoenix Bay|Bambooflat": { car: 15, auto: 3, ppl: 12 }, "Bambooflat|Phoenix Bay": { car: 12, auto: 5, bike: 10, ppl: 12 },
+                "Chatham|Bambooflat": { bike: 30, ppl: 16 }, "Bambooflat|Chatham": { bike: 30, ppl: 16 },
+                "Chatham|Dandus Point": { bike: 30, ppl: 16 }, "Dandus Point|Chatham": { bike: 30, ppl: 16 } }, VLOAD_DEFAULT = { car: 4, bike: 6, ppl: 10 };
+const VRULE = { "Phoenix Bay|Bambooflat": "Cars and autos only · no two-wheelers from Phoenix Bay", "Bambooflat|Phoenix Bay": "Cars, autos and two-wheelers",
+                "Chatham|Bambooflat": "Two-wheelers and passengers only", "Bambooflat|Chatham": "Two-wheelers and passengers only",
+                "Chatham|Dandus Point": "Two-wheelers and passengers only", "Dandus Point|Chatham": "Two-wheelers and passengers only" };
+const VCAPACITY = { "MV NORTH BAY": "85 two-wheelers, 120 passengers", "MV MUS": "95 two-wheelers, 120 passengers" };
+const ITEM_W = { car: 10.5, auto: 6.6, bike: 4.5 }, PAINT = { car: ["#f1f2f3", "#c7ccd1", "#b3261e", "#24467e", "#7b8189", "#1d2024", "#6b1f2a", "#e5e1d8"],
+  auto: ["#f2c230"], bike: ["#c81e1e", "#1d4ed8", "#111827", "#f1f2f3", "#d4a017", "#5ec4b6", "#9ca3af", "#7c2d12"] };
+const CAR_MODELS = ["hatch", "suv", "sedan", "hatch", "suv", "hatch", "sedan"], BIKE_MODELS = ["activa", "commuter", "activa", "maxi", "commuter", "vespa", "naked", "activa", "sport", "commuter"];
+// pack the deck: vehicles in rows from the far side (drawn first, a little higher) to the near side; passengers stand among them
+const DECKS = {};
+function deckFor(a, b) {
+  const key = a + "|" + b; if (DECKS[key]) return DECKS[key];
+  const spec = VLOAD[key] || VLOAD_DEFAULT, rnd = vrand(key.length * 97 + 13), veh = [];
+  ["car", "auto", "bike"].forEach(k => { for (let i = 0; i < (spec[k] || 0); i++) veh.push(k); });
+  for (let i = veh.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [veh[i], veh[j]] = [veh[j], veh[i]]; }
+  const rows = [[]]; let used = 0;
+  veh.forEach(k => { if (used + ITEM_W[k] > 48) { rows.push([]); used = 0; } rows[rows.length - 1].push({ k, x: -4 + used }); used += ITEM_W[k]; });
+  const R = rows.length, items = [];
+  let n = 0;
+  rows.forEach((row, r) => row.forEach((it, i) => { n++;
+    items.push({ ...it, x: it.x + (R - 1 - r) * .8, y: -10 - (R - 1 - r) * 1.05, z: r, c: PAINT[it.k][(n * 3 + r) % PAINT[it.k].length],
+                 model: it.k === "car" ? CAR_MODELS[n % CAR_MODELS.length] : it.k === "bike" ? BIKE_MODELS[(n * 7 + r) % BIKE_MODELS.length] : "auto" }); }));
+  const people = Array.from({ length: spec.ppl || 0 }, (_, i) => ({ P: PEOPLE[(i * 11 + key.length * 3) % 100], x: -3 + rnd() * 46, y: -9.6 + rnd() * .5, dir: rnd() < .5 ? -1 : 1 }));
+  const boardOrder = items.slice().sort((p, q) => p.z - q.z || p.x - q.x);
+  return DECKS[key] = { vehicles: items, boardOrder, people, rows: R, kinds: [...new Set(items.map(it => it.k).concat(people.length ? ["ppl"] : []))] };
+}
+// ═══ People and vehicles: reusable vector models, drawn in any unit space ═══
+// A person is drawn feet-at-(x,y), H units tall, facing +x when dir = 1. Inside, 100 units = full height.
+const SKIN = ["#7a4b2e", "#8a5a3a", "#9c6440", "#a8714a", "#b97d52", "#c99068"];
+const HAIR_C = ["#15110e", "#1e1813", "#2a1f17", "#120e0b"];
+const hsh = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+function makePerson(seed) {
+  const r = vrand(seed * 7919 + 101); r(); r();
+  const pick = a => a[Math.floor(r() * a.length)];
+  const x = r();
+  const type = x < .13 ? "salwar" : x < .22 ? "saree" : x < .31 ? "officeW" : x < .47 ? "man" : x < .56 ? "casual"
+             : x < .66 ? "college" : x < .74 ? "school" : x < .81 ? "elder" : x < .89 ? "parent" : x < .95 ? "traveller" : "shopper";
+  const female = ["salwar", "saree", "officeW"].includes(type) || (!["man", "casual"].includes(type) && r() < .5);
+  const P = { type, female, skin: pick(SKIN), hairC: pick(HAIR_C), h: female ? .92 + r() * .08 : .97 + r() * .09, speed: .9 + r() * .2,
+              bulk: .92 + r() * .18, stoop: 0, bag: null, hair: female ? pick(["long", "bun", "braid", "long"]) : pick(["short", "short", "side", "short"]),
+              moustache: !female && r() < .45, bindi: female && r() < .5 };
+  const SHIRT = ["#f3f4f6", "#cfe0f2", "#e9d8c4", "#9fb6cf", "#d7e6d0", "#f0e3e7", "#6f8db3"], TROUS = ["#2b2f36", "#3c4048", "#505660", "#6b5b4a", "#22324f"];
+  const KURTA = ["#b8264f", "#2e7d6b", "#6b3fa0", "#d98a1d", "#1f5fa8", "#c2410c", "#0f766e", "#9d174d"];
+  if (type === "salwar") Object.assign(P, { top: pick(KURTA), bottom: pick(["#f4ede1", "#e8d9c0", "#1f2937", "#f1e7f4"]), scarf: pick(["#f6c945", "#f1f1f1", "#e98aa7", "#7dd3c0"]), bag: r() < .6 ? "handbag" : null });
+  if (type === "saree") Object.assign(P, { top: pick(["#7c1d3a", "#1e3a8a", "#065f46", "#7c2d12"]), skirt: pick(["#e11d48", "#2563eb", "#0d9488", "#d97706", "#a21caf"]), border: "#e6b422", bag: r() < .5 ? "handbag" : "shopping" });
+  if (type === "officeW") Object.assign(P, { top: pick(["#334155", "#7c3aed", "#0e7490", "#be123c", "#f1f5f9"]), bottom: pick(["#111827", "#374151", "#1e293b"]), bag: "handbag", hair: pick(["bun", "long"]) });
+  if (type === "man") Object.assign(P, { top: pick(SHIRT), bottom: pick(TROUS), long: true, bag: r() < .35 ? "briefcase" : null, belt: true });
+  if (type === "casual") Object.assign(P, { top: pick(["#1f2937", "#b91c1c", "#15803d", "#1d4ed8", "#a16207", "#6b7280"]), bottom: pick(["#1e3a5f", "#2f4a6d", "#3a3a3a"]), bag: null });
+  if (type === "college") Object.assign(P, { top: pick(["#0f766e", "#7c3aed", "#e11d48", "#334155", "#f59e0b"]), bottom: pick(["#1e3a5f", "#27406b", "#111827"]), bag: "backpack", bagC: pick(["#111827", "#1d4ed8", "#7f1d1d", "#365314"]) });
+  if (type === "school") Object.assign(P, { top: "#f8fafc", bottom: pick(["#1e3a8a", "#374151", "#14532d"]), bag: "schoolbag", bagC: pick(["#dc2626", "#2563eb", "#7c3aed", "#ea580c"]), h: .66 + r() * .1, tie: "#b91c1c", hair: P.female ? "plaits" : "short" });
+  if (type === "elder") Object.assign(P, female ? { type: "elder", top: "#d6d3d1", skirt: pick(["#f5f5f4", "#a8a29e", "#57534e"]), border: "#78716c", saree: true }
+                                              : { top: "#f5f5f4", bottom: "#e7e5e4", long: true }, { hairC: "#cfcfcf", hair: female ? "bun" : pick(["short", "bald"]), stoop: .16, speed: .68, bag: "stick", h: P.h * .96 });
+  if (type === "parent") { Object.assign(P, female ? { top: pick(KURTA), bottom: "#f4ede1", scarf: "#f6c945", salwarStyle: true } : { top: pick(SHIRT), bottom: pick(TROUS), long: true });
+    P.child = makePerson.child(seed); P.bag = "shopping"; }
+  if (type === "traveller") Object.assign(P, { top: pick(SHIRT), bottom: pick(TROUS), bag: "suitcase", bagC: pick(["#1f2937", "#7f1d1d", "#1e40af", "#6b7280"]), long: r() < .5 });
+  if (type === "shopper") Object.assign(P, female ? { top: pick(KURTA), bottom: "#e8d9c0", scarf: "#e98aa7", salwarStyle: true } : { top: pick(SHIRT), bottom: pick(TROUS) }, { bag: "shopping" });
+  if (P.salwarStyle) P.type2 = "salwar";
+  P.shoe = female ? "#5b3a29" : pick(["#111111", "#3b2a20", "#1f2937"]);
+  P.bagC = P.bagC || pick(["#7c2d12", "#111827", "#9a3412", "#be185d", "#334155"]);
+  return P;
+}
+makePerson.child = seed => { const c = makePerson(seed + 5000); Object.assign(c, { type: "school", top: "#fde68a", bottom: "#1e40af", h: .56, bag: null, stoop: 0, speed: 1, child: null, hair: c.female ? "plaits" : "short", tie: null }); return c; };
+const PEOPLE = Array.from({ length: 100 }, (_, i) => makePerson(i + 1));
+const CREW = Object.assign(makePerson(999), { type: "man", female: false, top: "#f4a6bd", bottom: "#2b2f36", long: false, bag: null, hair: "short", moustache: false, stoop: 0, h: 1 });
+
+// one leg / arm, as two tapered strokes; returns the end point
+function limb(g, x0, y0, a1, l1, a2, l2, w, col) {
+  const x1 = x0 + Math.sin(a1) * l1, y1 = y0 + Math.cos(a1) * l1, x2 = x1 + Math.sin(a2) * l2, y2 = y1 + Math.cos(a2) * l2;
+  g.strokeStyle = col; g.lineCap = "round"; g.lineJoin = "round";
+  g.lineWidth = w; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+  g.lineWidth = w * .82; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+  return [x1, y1, x2, y2];
+}
+const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16), c = v => Math.max(0, Math.min(255, Math.round(v * f)));
+  return `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`; };
+
+// mode: "walk" | "stand" | "ride";  ph: walk phase (radians);  px: drawn size in screen pixels (decides detail)
+function drawPerson(g, x, y, H, P, ph, mode, dir, px = 30) {
+  const u = H / 100, walk = mode === "walk", ride = mode === "ride", sp = Math.sin(ph);
+  const isSaree = P.type === "saree" || P.saree, isSalwar = P.type === "salwar" || P.type2 === "salwar";
+  const kid = P.type === "school", bw = P.bulk;
+  g.save(); g.translate(x, y); g.scale(dir * u, u);
+  if (!ride) { g.fillStyle = "rgba(0,0,0,.24)"; g.beginPath(); g.ellipse(0, 0, 14 + Math.abs(sp) * 5, 3, 0, 0, 6.283); g.fill(); }
+  if (ride) g.translate(0, 47);
+  else g.translate(0, walk ? -1.3 * Math.cos(2 * ph) - .6 : 0);
+  const HIP = -47, SH = -79;
+  const legCol = kid ? P.skin : isSalwar ? P.bottom : P.bottom || P.top;
+  const swing = walk ? .44 * sp * (P.type === "elder" ? .7 : 1) : 0;
+  const kneeOf = ph2 => walk ? .08 + .6 * Math.max(0, Math.cos(ph2)) * (Math.sin(ph2) > -0.2 ? 1 : .3) : .03;
+  const leg = (th, kb, near) => {
+    let a1 = th, a2 = th - kb;
+    if (ride) { a1 = 1.42; a2 = .25; }
+    const col = near ? legCol : shade(legCol.startsWith("#") ? legCol : "#444444", .82);
+    const e = limb(g, 0, HIP, a1, 23, a2, 22, (isSalwar ? 9 : 7.5) * bw, isSaree ? "rgba(0,0,0,0)" : col);
+    if (kid && !isSaree) { g.strokeStyle = P.bottom; g.lineWidth = 8.5; g.beginPath(); g.moveTo(0, HIP); g.lineTo((e[0]) * .55, HIP + (e[1] - HIP) * .55); g.stroke();
+      g.strokeStyle = "#f8fafc"; g.lineWidth = 5; g.beginPath(); g.moveTo(e[2] + (e[0] - e[2]) * .25, e[3] + (e[1] - e[3]) * .25); g.lineTo(e[2], e[3]); g.stroke(); }
+    // foot: shoe or sandal, toe pointing forward
+    const fa = walk ? Math.max(-.35, Math.min(.35, -(a2) * .6)) : 0;
+    g.save(); g.translate(e[2], e[3]); g.rotate(ride ? 0 : fa);
+    g.fillStyle = near ? P.shoe : shade(P.shoe, .7);
+    g.beginPath(); g.moveTo(-3, -2.5); g.lineTo(6, -2.2); g.quadraticCurveTo(10, -1.4, 10, 1.2); g.lineTo(-3.4, 1.4); g.closePath(); g.fill();
+    if (P.female && !kid) { g.fillStyle = P.skin; g.fillRect(0, -2.6, 6, 1.4); }
+    g.restore();
+  };
+  const ph2 = ph + Math.PI;
+  // back limbs first
+  const backArm = () => {
+    let a = walk ? .36 * sp : .05, b = .25;
+    if (P.bag === "suitcase" && walk) { a = -.55; b = -.1; }
+    if (ride) { a = 1.25; b = .15; }
+    const sleeve = P.long || isSalwar || P.type === "officeW" ? P.top : null;
+    const e = limb(g, -1, SH + 2, a, 16, a + b, 15, 5.6 * bw, shade(sleeve || P.skin, .8));
+    if (!sleeve) { g.strokeStyle = shade(P.top, .8); g.lineWidth = 6.4 * bw; g.beginPath(); g.moveTo(-1, SH + 2); g.lineTo(-1 + Math.sin(a) * 8, SH + 2 + Math.cos(a) * 8); g.stroke(); }
+    g.fillStyle = shade(P.skin, .85); g.beginPath(); g.arc(e[2], e[3], 2.6, 0, 6.283); g.fill();
+    return e;
+  };
+  g.save();
+  // stoop: the upper body leans forward from the hips
+  const lean = (P.stoop || 0) + (walk ? .04 : 0) + (ride ? .12 : 0);
+  if (!isSaree) leg(-swing, kneeOf(ph2), false);
+  const bA = backArm();
+  if (P.bag === "suitcase") {                                                       // wheeled suitcase pulled behind
+    g.strokeStyle = "#9ca3af"; g.lineWidth = 1.6; g.beginPath(); g.moveTo(bA[2], bA[3]); g.lineTo(-27, -30); g.stroke();
+    g.fillStyle = P.bagC; g.beginPath(); g.roundRect(-36, -31, 13, 27, 2.5); g.fill();
+    g.strokeStyle = "rgba(255,255,255,.18)"; g.lineWidth = 1; [-32.5, -28.5].forEach(sx => { g.beginPath(); g.moveTo(sx, -29); g.lineTo(sx, -6); g.stroke(); });
+    g.fillStyle = "#111"; g.beginPath(); g.arc(-33, -2.2, 2.2, 0, 6.283); g.arc(-26, -2.2, 2.2, 0, 6.283); g.fill();
+  }
+  if (!isSaree) leg(swing, kneeOf(ph), true);
+  else {                                                                            // saree: only the feet show under the drape
+    const f = walk ? sp * 4 : 0;
+    g.fillStyle = P.skin; g.fillRect(-1 - f, -4, 5, 3); g.fillRect(1 + f, -4, 5, 3);
+    g.fillStyle = "#5b3a29"; g.beginPath(); g.ellipse(2 - f, -.6, 5, 1.6, 0, 0, 6.283); g.ellipse(4 + f, -.6, 5, 1.6, 0, 0, 6.283); g.fill();
+  }
+  // upper body (rotated by the lean, around the hip)
+  g.translate(0, HIP); g.rotate(lean); g.translate(0, -HIP);
+  if (P.bag === "backpack" || P.bag === "schoolbag") {
+    const big = P.bag === "schoolbag" ? 1.15 : 1;
+    g.fillStyle = P.bagC; g.beginPath(); g.roundRect(-15 * big, SH + 3, 10 * big, 25 * big, 3.5); g.fill();
+    g.fillStyle = shade(P.bagC, .75); g.beginPath(); g.roundRect(-16.5 * big, SH + 14, 4, 11 * big, 2); g.fill();
+    g.fillStyle = "rgba(255,255,255,.18)"; g.fillRect(-14 * big, SH + 6, 7 * big, 1.2);
+  }
+  // torso
+  const W = 7 * bw;
+  g.fillStyle = P.top;
+  if (isSaree) {
+    // pleated drape from waist to ankles, swaying with the stride
+    const sw = walk ? sp * 2.5 : 0;
+    const skirt = new Path2D(`M${-W} ${HIP - 6} L${W - 1} ${HIP - 6} L${W + 4 + sw} -3 Q0 1 ${-W - 4 + sw} -3 Z`);
+    g.fillStyle = P.skirt; g.fill(skirt);
+    g.save(); g.clip(skirt); g.fillStyle = P.border; g.fillRect(-20, -8, 40, 5);
+    g.strokeStyle = "rgba(0,0,0,.18)"; g.lineWidth = .9; [1.5, 3.5, 5.5].forEach(px2 => { g.beginPath(); g.moveTo(px2, HIP - 4); g.lineTo(px2 + 1.5 + sw * .4, -4); g.stroke(); });
+    g.restore();
+    g.fillStyle = P.skin; g.fillRect(-W + 1, HIP - 13, 2 * W - 2, 8);                // midriff
+    g.fillStyle = P.top; g.beginPath(); g.roundRect(-W, SH, 2 * W, 17, [5, 5, 2, 2]); g.fill();   // blouse
+  } else if (isSalwar) {
+    const sw = walk ? sp * 1.6 : 0;
+    g.beginPath(); g.moveTo(-W, SH + 1); g.quadraticCurveTo(0, SH - 2.5, W - .5, SH + 1); g.lineTo(W + 3 + sw, -27); g.lineTo(-W - 3 + sw, -27); g.closePath(); g.fill();
+    g.fillStyle = "rgba(255,255,255,.22)"; for (let i = 0; i < 5; i++) for (let j = 0; j < 3; j++) { g.beginPath(); g.arc(-4 + j * 4 + (i % 2) * 2, SH + 9 + i * 9, .8, 0, 6.283); g.fill(); }
+    g.strokeStyle = shade(P.top, .7); g.lineWidth = .8; g.beginPath(); g.moveTo(W + 1, -40); g.lineTo(W + 3 + sw, -27); g.stroke();   // side slit
+  } else {
+    const len = P.type === "officeW" ? HIP + 4 : HIP + 2;
+    g.beginPath(); g.moveTo(-W, SH + 1.5); g.quadraticCurveTo(0, SH - 2.5, W - .5, SH + 1.5); g.lineTo(W - .5, len); g.lineTo(-W + .5, len); g.closePath(); g.fill();
+    g.fillStyle = "rgba(0,0,0,.08)"; g.fillRect(-W, SH + 1.5, 3, len - SH - 1.5);    // shadow side
+    if (P.long && P.type !== "elder") { g.fillStyle = "rgba(0,0,0,.25)"; for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(4.6, SH + 7 + i * 7, .7, 0, 6.283); g.fill(); } }
+    if (P.belt) { g.fillStyle = "#1c1917"; g.fillRect(-W + .5, HIP, 2 * W - 1, 2.4); g.fillStyle = "#b8a16a"; g.fillRect(3, HIP + .2, 2, 2); }
+    if (P.tie) { g.fillStyle = P.tie; g.beginPath(); g.moveTo(4, SH + 2); g.lineTo(5.6, SH + 2); g.lineTo(6, SH + 14); g.lineTo(4.6, SH + 16); g.lineTo(3.6, SH + 14); g.fill(); }
+    if (P.type === "elder" && !P.female) { g.fillStyle = P.top; g.beginPath(); g.moveTo(-W, HIP); g.lineTo(W, HIP); g.lineTo(W + 2, -30); g.lineTo(-W - 2, -30); g.fill(); }   // kurta
+  }
+  // collar
+  if (P.long || P.type === "man") { g.fillStyle = shade(P.top, .85); g.beginPath(); g.moveTo(-1, SH - 1); g.lineTo(4, SH - 1.5); g.lineTo(2.6, SH + 4); g.fill(); }
+  // neck and head
+  g.fillStyle = P.skin; g.fillRect(-1.6, SH - 7, 4.6, 8);
+  const hx = 1.2, hy = -91;
+  const hairB = P.hairC;
+  if (P.hair === "long" || P.hair === "braid" || P.hair === "plaits") {             // hair falling behind the head
+    g.fillStyle = hairB; g.beginPath(); g.moveTo(hx - 5, hy - 6); g.quadraticCurveTo(hx - 11, hy + 4, hx - 9, P.hair === "long" ? hy + 22 : hy + 12);
+    g.lineTo(hx - 3, hy + 10); g.closePath(); g.fill();
+    if (P.hair === "braid" || P.hair === "plaits") { g.strokeStyle = hairB; g.lineWidth = 3; g.beginPath(); g.moveTo(hx - 8, hy + 8);
+      g.quadraticCurveTo(hx - 10 - (walk ? sp : 0), hy + 20, hx - 8.5 - (walk ? sp * 1.5 : 0), hy + (P.hair === "plaits" ? 22 : 34)); g.stroke(); }
+  }
+  g.fillStyle = hairB; g.beginPath(); g.ellipse(hx - 1.4, hy - .6, 6.6, 7, 0, 0, 6.283); g.fill();            // back of the head
+  g.fillStyle = P.skin; g.beginPath(); g.ellipse(hx + 1.2, hy + .8, 5.4, 6.4, 0, 0, 6.283); g.fill();          // face
+  g.beginPath(); g.moveTo(hx + 6.2, hy - .5); g.lineTo(hx + 8, hy + 2.6); g.lineTo(hx + 6, hy + 3.2); g.fill();   // nose
+  g.fillStyle = shade(P.skin, .8); g.beginPath(); g.ellipse(hx - 1.6, hy + 1.2, 1.4, 2.1, 0, 0, 6.283); g.fill();   // ear
+  if (P.hair !== "bald") { g.fillStyle = hairB; g.beginPath(); g.ellipse(hx + .4, hy - 4.6, 6.4, 3.4, -.15, 0, 6.283); g.fill();   // top of the hair
+    if (P.hair === "side") { g.beginPath(); g.ellipse(hx + 4, hy - 4.8, 3.6, 2.2, .3, 0, 6.283); g.fill(); } }
+  if (P.hair === "bun") { g.beginPath(); g.arc(hx - 7.4, hy - 3, 3.2, 0, 6.283); g.fill(); }
+  if (px > 18) {                                                                    // face detail only when big enough to read
+    g.fillStyle = "#1a1310"; g.beginPath(); g.ellipse(hx + 4.2, hy - .2, .9, 1.1, 0, 0, 6.283); g.fill();
+    g.strokeStyle = shade(P.skin, .6); g.lineWidth = .7; g.beginPath(); g.moveTo(hx + 3.2, hy + 4.6); g.lineTo(hx + 5.4, hy + 4.4); g.stroke();
+    if (P.moustache) { g.strokeStyle = hairB; g.lineWidth = 1.3; g.beginPath(); g.moveTo(hx + 3.4, hy + 3.4); g.lineTo(hx + 6.4, hy + 3.2); g.stroke(); }
+    if (P.bindi) { g.fillStyle = "#c81e1e"; g.beginPath(); g.arc(hx + 5.6, hy - 3.4, .65, 0, 6.283); g.fill(); }
+  }
+  if (ride) { g.fillStyle = P.helmet || "#1f2937"; g.beginPath(); g.ellipse(hx, hy - 1.5, 7.6, 7.4, 0, Math.PI * .95, Math.PI * 2.15); g.fill();
+    g.fillStyle = "rgba(20,30,40,.75)"; g.fillRect(hx + 3, hy - 2.5, 4.6, 4); }
+  // dupatta / pallu over the shoulder
+  if (isSalwar && P.scarf) { const fl = walk ? Math.sin(ph * .5) * 2 : 0;
+    g.strokeStyle = P.scarf; g.lineWidth = 3.4; g.lineCap = "round"; g.beginPath(); g.moveTo(5, SH + 1); g.quadraticCurveTo(-2, SH - 1, -8, SH + 3);
+    g.quadraticCurveTo(-13 - fl, SH + 18, -10 - fl, SH + 30); g.stroke(); }
+  if (isSaree) { const fl = walk ? Math.sin(ph * .5) * 2 : 0;
+    g.fillStyle = P.skirt; g.beginPath(); g.moveTo(5.5, SH); g.lineTo(-W - 1, HIP - 6); g.lineTo(-W + 3, HIP - 6); g.lineTo(6.8, SH + 4); g.fill();
+    g.beginPath(); g.moveTo(-5, SH); g.quadraticCurveTo(-14 - fl, SH + 14, -12 - fl, SH + 34); g.lineTo(-7 - fl, SH + 33); g.quadraticCurveTo(-8, SH + 12, -1, SH); g.fill();
+    g.fillStyle = P.border; g.fillRect(-12.6 - fl, SH + 31, 5.4, 2.2); }
+  if (P.bag === "handbag") {                                                         // strap across, bag at the back hip
+    g.strokeStyle = shade(P.bagC, .7); g.lineWidth = 1.1; g.beginPath(); g.moveTo(3, SH + 1); g.lineTo(-7, HIP - 4); g.stroke();
+    g.fillStyle = P.bagC; g.beginPath(); g.roundRect(-12, HIP - 8, 9, 8, 2); g.fill(); g.fillStyle = "rgba(255,255,255,.2)"; g.fillRect(-11, HIP - 6.5, 7, .8);
+  }
+  if (P.bag === "backpack" || P.bag === "schoolbag") { g.strokeStyle = shade(P.bagC, .6); g.lineWidth = 1.8; g.beginPath(); g.moveTo(-3, SH + 1); g.quadraticCurveTo(3, SH + 6, -2, SH + 18); g.stroke(); }
+  // front arm last
+  let fa = walk ? -.36 * sp : -.05, fb = .3;
+  if (P.bag === "stick") { fa = walk ? .35 + .1 * sp : .3; fb = .1; }
+  if (P.bag === "briefcase" || P.bag === "shopping") { fa = walk ? -.22 * sp : 0; fb = .08; }
+  if (ride) { fa = 1.15; fb = .2; }
+  const sleeve = P.long || isSalwar || P.type === "officeW" || P.type === "elder" ? P.top : null;
+  const fe = limb(g, 1, SH + 2, fa, 16, fa + fb, 15, 5.8 * bw, sleeve || P.skin);
+  if (!sleeve) { g.strokeStyle = P.top; g.lineWidth = 6.8 * bw; g.beginPath(); g.moveTo(1, SH + 2); g.lineTo(1 + Math.sin(fa) * 8, SH + 2 + Math.cos(fa) * 8); g.stroke(); }
+  g.fillStyle = P.skin; g.beginPath(); g.arc(fe[2], fe[3], 2.7, 0, 6.283); g.fill();
+  if (P.bag === "shopping") { g.strokeStyle = "#e5e7eb"; g.lineWidth = .8; g.beginPath(); g.moveTo(fe[2] - 2, fe[3] + 1); g.lineTo(fe[2], fe[3] + 4); g.lineTo(fe[2] + 2, fe[3] + 1); g.stroke();
+    g.fillStyle = P.type === "saree" ? "#f59e0b" : "#16a34a"; g.beginPath(); g.roundRect(fe[2] - 4.5, fe[3] + 4, 9, 11, 1.5); g.fill(); }
+  if (P.bag === "briefcase") { g.fillStyle = "#3f2a1d"; g.beginPath(); g.roundRect(fe[2] - 6, fe[3] + 2.5, 12, 9, 1.5); g.fill(); g.fillStyle = "#b8a16a"; g.fillRect(fe[2] - .8, fe[3] + 4.5, 1.6, 1.2); }
+  if (P.bag === "stick") { g.strokeStyle = "#5b3a1e"; g.lineWidth = 2; g.lineCap = "round";
+    g.beginPath(); g.moveTo(fe[2], fe[3] + 1); g.lineTo(fe[2] + 4 + (walk ? sp * 3 : 0), -2); g.stroke(); }
+  g.restore();
+  g.restore();
+}
+
+// ── vehicles: 100 units long, ground at y = 0, facing +x ──
+function wheel(g, cx, cy, r, rot, rim, spokes, tyre = .28) {
+  g.fillStyle = "#121314"; g.beginPath(); g.arc(cx, cy, r, 0, 6.283); g.fill();
+  g.fillStyle = "#26282b"; g.beginPath(); g.arc(cx, cy, r * .93, 0, 6.283); g.fill();
+  const ri = r * (1 - tyre);
+  g.fillStyle = rim; g.beginPath(); g.arc(cx, cy, ri, 0, 6.283); g.fill();
+  g.fillStyle = "rgba(0,0,0,.35)"; g.beginPath(); g.arc(cx, cy, ri * .82, 0, 6.283); g.fill();
+  g.strokeStyle = rim; g.lineCap = "round";
+  if (spokes > 8) { g.lineWidth = r * .03; for (let i = 0; i < spokes; i++) { const a = rot + i * 6.283 / spokes; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * ri * .85, cy + Math.sin(a) * ri * .85); g.stroke(); } }
+  else { g.lineWidth = ri * .24; for (let i = 0; i < spokes; i++) { const a = rot + i * 6.283 / spokes; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * ri * .8, cy + Math.sin(a) * ri * .8); g.stroke(); } }
+  g.fillStyle = "#9ca3af"; g.beginPath(); g.arc(cx, cy, ri * .22, 0, 6.283); g.fill();
+}
+function gloss(g, path, y0, y1, a = .3) { const gr = g.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(.5, "rgba(255,255,255,0)"); gr.addColorStop(1, "rgba(0,0,0,.18)"); g.fillStyle = gr; g.fill(path); }
+
+function drawCar(g, model, c, rot, driver) {
+  const suv = model === "suv", sedan = model === "sedan";
+  const lift = suv ? 3 : 0, wr = suv ? 10.5 : 9.4, wy = -wr;
+  g.fillStyle = "rgba(0,0,0,.28)"; g.beginPath(); g.ellipse(0, 0, 50, 3, 0, 0, 6.283); g.fill();
+  const roof = suv ? -47 : sedan ? -38.5 : -40, belt = suv ? -31 : -27;
+  const body = new Path2D(sedan
+    ? `M-50 ${-8 - lift} L-50 -22 Q-49 -27 -44 -28 L-31 -28 L-22 -37 Q-20 ${roof} -16 ${roof} L8 ${roof} Q12 ${roof} 15 -36 L27 -27 Q43 -25 48 -22 Q50 -19 50 -13 L49 -8 Q47 -6 44 -6 L-46 -6 Q-50 -6 -50 -8 Z`
+    : `M-50 ${-9 - lift} L-50 ${-23 - lift} Q-49 ${-31 - lift} -45 ${-34 - lift} L-41 ${roof + 2} Q-39 ${roof} -34 ${roof} L${suv ? 14 : 10} ${roof} Q${suv ? 19 : 15} ${roof} ${suv ? 22 : 18} ${roof + 3} L${suv ? 32 : 30} ${belt} Q${suv ? 46 : 44} ${belt + 2} 49 ${belt + 5} Q50 ${belt + 9} 50 ${-13 - lift} L49 ${-8 - lift} Q47 ${-6 - lift} 44 ${-6 - lift} L-46 ${-6 - lift} Q-50 ${-6 - lift} -50 ${-9 - lift} Z`);
+  g.fillStyle = c; g.fill(body); gloss(g, body, roof, -6);
+  // glass with seats and the driver behind it
+  const glass = new Path2D(sedan
+    ? `M-28 -28 L-20 -36 Q-18 -37.2 -15 -37.2 L8 -37.2 Q11 -37.2 13.5 -35 L23 -28 Z`
+    : `M-42 ${belt - 1} L-38 ${roof + 2.6} Q-36 ${roof + 1.4} -33 ${roof + 1.4} L${suv ? 13.5 : 9.5} ${roof + 1.4} Q${suv ? 17 : 13.5} ${roof + 1.4} ${suv ? 20 : 16} ${roof + 3.6} L${suv ? 28 : 26} ${belt} Z`);
+  const gg = g.createLinearGradient(0, roof, 0, belt); gg.addColorStop(0, "#1c2a38"); gg.addColorStop(1, "#45607a");
+  g.fillStyle = gg; g.fill(glass);
+  g.save(); g.clip(glass);
+  g.fillStyle = "#2b2f36"; [[-24, 1], [2, 1]].forEach(([sx]) => { g.beginPath(); g.roundRect(sx, belt - 9, 5, 9, 2); g.fill(); });
+  if (driver) { g.fillStyle = "#8a5a3a"; g.beginPath(); g.arc(9, belt - 6.5, 3.2, 0, 6.283); g.fill(); g.fillStyle = "#1a1410"; g.beginPath(); g.arc(8.4, belt - 8, 3, Math.PI, 6.283); g.fill(); }
+  g.fillStyle = "rgba(255,255,255,.18)"; g.beginPath(); g.moveTo(-30, roof); g.lineTo(-22, roof); g.lineTo(-34, belt); g.lineTo(-40, belt); g.fill();
+  g.restore();
+  g.fillStyle = c; g.fillRect(sedan ? -6 : -7, roof + 1, 2.8, belt - roof);          // B-pillar
+  // doors, handles, mirror, lamps, bumpers
+  g.strokeStyle = "rgba(0,0,0,.35)"; g.lineWidth = .6;
+  [sedan ? -6 : -7, sedan ? 20 : suv ? 24 : 20].forEach(dx => { g.beginPath(); g.moveTo(dx, belt); g.lineTo(dx + 1, -9 - lift); g.stroke(); });
+  if (!sedan) { g.beginPath(); g.moveTo(-30, belt); g.lineTo(-30, -9 - lift); g.stroke(); }
+  g.fillStyle = "rgba(0,0,0,.45)"; g.fillRect(-2, belt + 3, 4, 1.1); g.fillRect(-25, belt + 3, 4, 1.1);
+  g.fillStyle = shade(c, .7); g.beginPath(); g.moveTo(20, belt); g.lineTo(26, belt - 1); g.lineTo(26, belt + 3); g.lineTo(21, belt + 3); g.fill();   // mirror
+  g.fillStyle = "#fff7d6"; g.beginPath(); g.moveTo(44, -24 - lift); g.lineTo(49.5, -22 - lift); g.lineTo(49.6, -18 - lift); g.lineTo(44, -19 - lift); g.fill();
+  g.fillStyle = "#c81e1e"; g.fillRect(-50, -24 - lift, 3, 5);
+  g.fillStyle = suv ? "#1f2226" : "rgba(0,0,0,.4)"; g.fillRect(-50, -11 - lift, 100, suv ? 5 : 3.5);
+  if (suv) { g.fillStyle = "#1f2226"; g.fillRect(-36, roof - 2, 46, 1.6);              // roof rails
+    [-30, 30].forEach(cx => { g.beginPath(); g.arc(cx, wy, wr + 3.2, Math.PI, 6.283); g.fill(); }); }
+  else { g.fillStyle = "#111"; [-31, 31].forEach(cx => { g.beginPath(); g.arc(cx, wy, wr + 1.8, Math.PI, 6.283); g.fill(); }); }
+  [-31, 31].forEach(cx => wheel(g, cx, wy, wr, rot, suv ? "#b8bec6" : "#c9cdd2", 5));
+}
+function drawAuto(g, c, rot, driver) {
+  g.fillStyle = "rgba(0,0,0,.28)"; g.beginPath(); g.ellipse(0, 0, 50, 3, 0, 0, 6.283); g.fill();
+  const black = "#17181b";
+  // canopy: black hood with a yellow top, open side for passengers
+  const hood = new Path2D("M-50 -24 L-50 -60 Q-49 -68 -41 -68 L26 -68 Q32 -67 34 -62 L36 -50 L28 -50 L27 -60 L-38 -60 L-38 -24 Z");
+  g.fillStyle = black; g.fill(hood); gloss(g, hood, -68, -24, .18);
+  g.fillStyle = c; g.beginPath(); g.moveTo(-49, -64); g.quadraticCurveTo(-48, -70, -40, -70); g.lineTo(27, -70); g.quadraticCurveTo(33, -69, 34, -64); g.lineTo(-49, -64); g.fill();
+  g.fillStyle = "#5b3a29"; g.beginPath(); g.roundRect(-38, -38, 28, 8, 2); g.fill(); g.beginPath(); g.roundRect(-38, -56, 6, 22, 2); g.fill();   // passenger seat
+  g.fillStyle = "#3a2a20"; g.beginPath(); g.roundRect(-2, -36, 12, 6, 2); g.fill();          // driver seat
+  // body tub, front cowl, windscreen
+  const tub = new Path2D("M-50 -12 L-50 -26 L-38 -26 L-36 -30 L-10 -30 L-8 -22 L26 -22 Q32 -24 34 -36 L37 -50 Q44 -48 46 -36 L47 -12 Q46 -9 42 -9 L-46 -9 Q-50 -9 -50 -12 Z");
+  g.fillStyle = black; g.fill(tub); gloss(g, tub, -50, -9, .22);
+  g.fillStyle = c; g.beginPath(); g.moveTo(34, -36); g.lineTo(37, -50); g.lineTo(42, -49); g.lineTo(39, -35); g.fill();   // yellow cowl stripe
+  g.fillStyle = "rgba(170,200,220,.55)"; g.beginPath(); g.moveTo(27, -60); g.lineTo(34, -61); g.lineTo(37, -51); g.lineTo(30, -50); g.fill();
+  g.strokeStyle = "#2a2c30"; g.lineWidth = 1; g.beginPath(); g.moveTo(-8, -60); g.lineTo(-8, -30); g.stroke();
+  if (driver) { g.fillStyle = "#8a5a3a"; g.beginPath(); g.arc(5, -46, 3.6, 0, 6.283); g.fill(); g.fillStyle = "#e5e7eb"; g.beginPath(); g.roundRect(1, -42, 8, 10, 2.5); g.fill();
+    g.fillStyle = "#1a1410"; g.beginPath(); g.arc(4.4, -47.5, 3.4, Math.PI, 6.283); g.fill(); }
+  g.fillStyle = "#fff7d6"; g.beginPath(); g.arc(44.5, -30, 2.6, 0, 6.283); g.fill();
+  g.fillStyle = "#c81e1e"; g.fillRect(-50, -22, 2, 5);
+  g.fillStyle = black; g.beginPath(); g.arc(40, -9, 11.5, Math.PI, 6.283); g.fill();          // front mudguard
+  wheel(g, 40, -8.5, 8.5, rot, "#9ca3af", 5); wheel(g, -30, -8.5, 8.5, rot, "#9ca3af", 5);
+}
+function drawMoto(g, model, c, rot) {
+  g.fillStyle = "rgba(0,0,0,.25)"; g.beginPath(); g.ellipse(0, 0, 48, 3, 0, 0, 6.283); g.fill();
+  const spokes = model === "commuter" ? 18 : 5, rim = model === "sport" ? "#e5e7eb" : model === "naked" ? "#f97316" : "#c9cdd2";
+  wheel(g, -33, -16, 16, rot, rim, spokes, .22); wheel(g, 34, -16, 16, rot, rim, spokes, .22);
+  g.strokeStyle = "#2a2c30"; g.lineWidth = 3; g.beginPath(); g.moveTo(-33, -16); g.lineTo(-6, -24); g.stroke();      // swing arm
+  g.strokeStyle = "#7c7f85"; g.lineWidth = 2.4; g.beginPath(); g.moveTo(-28, -22); g.lineTo(-20, -44); g.stroke();  // rear shock
+  g.strokeStyle = "#b8bcc2"; g.lineWidth = .9; for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(-27.4 + i * 1.5, -25 - i * 3.7); g.lineTo(-24 + i * 1.5, -27 - i * 3.7); g.stroke(); }
+  g.fillStyle = "#585c62"; g.beginPath(); g.roundRect(-8, -36, 22, 20, 3); g.fill();                                // engine
+  g.strokeStyle = "#7d8187"; g.lineWidth = .8; for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(-6, -32 + i * 4); g.lineTo(12, -32 + i * 4); g.stroke(); }
+  const ex = g.createLinearGradient(0, -24, 0, -14); ex.addColorStop(0, "#f3f4f6"); ex.addColorStop(1, "#8b9096");
+  g.strokeStyle = "#9ca3af"; g.lineWidth = 2.6; g.beginPath(); g.moveTo(8, -16); g.quadraticCurveTo(-5, -12, -22, -16); g.stroke();
+  g.fillStyle = ex; g.beginPath(); g.roundRect(model === "sport" ? -30 : -45, -22, model === "sport" ? 14 : 24, 6, 3); g.fill();   // exhaust
+  g.strokeStyle = "#c9cdd2"; g.lineWidth = 3.2; g.beginPath(); g.moveTo(34, -16); g.lineTo(25, -56); g.stroke();   // front fork
+  if (model === "sport") {
+    const fair = new Path2D("M16 -64 L30 -66 Q40 -58 42 -44 L36 -30 L14 -26 L8 -40 Z");
+    g.fillStyle = c; g.fill(fair); gloss(g, fair, -66, -26);
+    g.fillStyle = "rgba(150,180,210,.6)"; g.beginPath(); g.moveTo(18, -64); g.lineTo(28, -72); g.lineTo(32, -66); g.fill();
+    g.fillStyle = "#fff7d6"; g.beginPath(); g.ellipse(39, -52, 2.4, 3.4, .4, 0, 6.283); g.fill();
+    g.fillStyle = "#e5e7eb"; g.beginPath(); g.moveTo(14, -36); g.lineTo(30, -40); g.lineTo(26, -32); g.fill();
+  }
+  const tank = new Path2D(model === "sport" ? "M-4 -48 L2 -60 L18 -62 L20 -48 L4 -44 Z" : "M-4 -46 Q-2 -56 6 -57 L20 -56 Q26 -53 24 -46 L4 -42 Z");
+  g.fillStyle = c; g.fill(tank); gloss(g, tank, -60, -42, .45);
+  const side = new Path2D("M-26 -44 L-6 -46 L2 -34 L-12 -30 L-24 -36 Z");
+  g.fillStyle = model === "commuter" ? c : "#2a2c30"; g.fill(side);
+  if (model === "commuter") { g.strokeStyle = "rgba(255,255,255,.65)"; g.lineWidth = .9; g.beginPath(); g.moveTo(-22, -40); g.quadraticCurveTo(-10, -44, 0, -38); g.stroke(); }
+  g.fillStyle = "#151617"; g.beginPath(); g.roundRect(model === "sport" ? -34 : -38, model === "sport" ? -54 : -51, model === "sport" ? 30 : 36, 6, 3); g.fill();   // seat
+  g.fillStyle = c; g.beginPath(); g.moveTo(-48, model === "sport" ? -56 : -46); g.lineTo(-30, -50); g.lineTo(-30, -44); g.lineTo(-46, -42); g.fill();   // tail
+  g.fillStyle = "#e11d48"; g.fillRect(-49, model === "sport" ? -55 : -46, 3, 2.4);
+  g.strokeStyle = c; g.lineWidth = 3.6; g.lineCap = "round"; g.beginPath(); g.arc(34, -16, 19, Math.PI * 1.08, Math.PI * 1.62); g.stroke();   // front fender
+  if (model !== "sport") {
+    g.fillStyle = "#d1d5db"; g.beginPath(); g.arc(30, -54, 5.4, 0, 6.283); g.fill();                              // headlight
+    g.fillStyle = "#fff7d6"; g.beginPath(); g.arc(31, -54, 4, 0, 6.283); g.fill();
+    if (model === "commuter") { g.fillStyle = shade(c, .8); g.beginPath(); g.moveTo(24, -60); g.lineTo(32, -64); g.lineTo(34, -58); g.fill(); }
+  }
+  g.strokeStyle = "#1f2226"; g.lineWidth = 2; g.beginPath(); g.moveTo(16, -62); g.lineTo(24, -64); g.stroke();      // handlebar
+  g.strokeStyle = "#5b5f65"; g.lineWidth = .9; g.beginPath(); g.moveTo(22, -64); g.lineTo(19, -74); g.stroke();       // mirror
+  g.fillStyle = "#2a2c30"; g.beginPath(); g.ellipse(18.4, -75.5, 3.4, 2.2, -.2, 0, 6.283); g.fill();
+}
+function drawScooter(g, model, c, rot) {
+  g.fillStyle = "rgba(0,0,0,.25)"; g.beginPath(); g.ellipse(0, 0, 48, 3, 0, 0, 6.283); g.fill();
+  const vespa = model === "vespa";
+  wheel(g, -34, -11.5, 11.5, rot, "#c9cdd2", 5, .3); wheel(g, 36, -11.5, 11.5, rot, model === "maxi" ? "#9ca3af" : "#c9cdd2", 5, .3);
+  g.fillStyle = "#4b4f55"; g.beginPath(); g.roundRect(-34, -26, 30, 12, 4); g.fill();                              // engine / variator
+  g.fillStyle = "#2a2c30"; g.fillRect(-2, -16, 26, 4);                                                               // floorboard
+  const rear = new Path2D(vespa ? "M-50 -26 Q-52 -46 -32 -48 L-6 -46 Q-2 -34 -6 -24 Q-14 -16 -30 -16 Q-48 -16 -50 -26 Z"
+                                 : "M-50 -28 Q-50 -46 -30 -47 L-2 -46 L2 -26 L-10 -18 L-40 -16 Q-50 -18 -50 -28 Z");
+  g.fillStyle = c; g.fill(rear); gloss(g, rear, -48, -16, .4);
+  if (!vespa) { g.strokeStyle = "rgba(0,0,0,.22)"; g.lineWidth = .9; g.beginPath(); g.moveTo(-40, -30); g.quadraticCurveTo(-22, -40, -6, -36); g.stroke(); }
+  else { g.strokeStyle = "#e5e7eb"; g.lineWidth = .9; g.beginPath(); g.moveTo(-46, -27); g.quadraticCurveTo(-30, -21, -8, -24); g.stroke(); }
+  g.fillStyle = vespa ? "#7a5d3a" : "#151617"; g.beginPath(); g.roundRect(-44, -53, 42, 7, 3.4); g.fill();          // seat
+  g.strokeStyle = "#c9cdd2"; g.lineWidth = 1.6; g.beginPath(); g.moveTo(-50, -52); g.lineTo(-40, -50); g.stroke();  // grab rail
+  g.fillStyle = "#e11d48"; g.fillRect(-51, -36, 2.6, 4);
+  const apron = new Path2D(vespa ? "M20 -12 L26 -12 Q42 -34 34 -60 L28 -60 Q32 -36 20 -16 Z" : "M20 -12 L26 -12 Q40 -38 38 -58 L32 -60 Q30 -36 20 -16 Z");
+  g.fillStyle = c; g.fill(apron); gloss(g, apron, -60, -12);
+  g.strokeStyle = shade(c, .85); g.lineWidth = 4; g.lineCap = "round"; g.beginPath(); g.arc(36, -11.5, 14.5, Math.PI * 1.1, Math.PI * 1.7); g.stroke();   // front fender
+  g.strokeStyle = "#9ca3af"; g.lineWidth = 2.2; g.beginPath(); g.moveTo(36, -11.5); g.lineTo(33, -40); g.stroke();
+  g.fillStyle = vespa ? "#d1d5db" : c; g.beginPath(); g.moveTo(26, -64); g.lineTo(42, -66); g.lineTo(44, -59); g.lineTo(28, -58); g.fill();   // handlebar cowl
+  g.fillStyle = "#fff7d6"; if (vespa) { g.beginPath(); g.arc(40, -63, 3.4, 0, 6.283); g.fill(); } else { g.beginPath(); g.ellipse(41, -61.5, 3.4, 2.2, -.1, 0, 6.283); g.fill(); }
+  g.strokeStyle = "#1f2226"; g.lineWidth = 1.8; g.beginPath(); g.moveTo(24, -64); g.lineTo(30, -65); g.stroke();
+  g.strokeStyle = "#6b7280"; g.lineWidth = .9; g.beginPath(); g.moveTo(31, -65); g.lineTo(27, -76); g.stroke();
+  g.fillStyle = vespa ? "#d1d5db" : "#2a2c30"; g.beginPath(); g.ellipse(26.6, -77.5, 3.2, 2.2, -.2, 0, 6.283); g.fill();
+}
+// a vehicle item centred at (x, y = ground), L units long, facing dir; rider = person spec when someone rides it
+function drawVehicle(g, it, x, y, dir, rot, rider, px) {
+  const L = ITEM_W[it.k], f = L / 100;
+  g.save(); g.translate(x, y); g.scale(dir * f, f);
+  if (it.k === "car") drawCar(g, it.model, it.c, rot, rider);
+  else if (it.k === "auto") drawAuto(g, it.c, rot, true);
+  else if (it.model === "commuter" || it.model === "sport" || it.model === "naked") drawMoto(g, it.model, it.c, rot);
+  else drawScooter(g, it.model, it.c, rot);
+  if (rider && it.k === "bike") {
+    const sx = it.model === "sport" || it.model === "commuter" || it.model === "naked" ? -14 : -20;
+    drawPerson(g, sx, -52, 92, Object.assign({}, rider, { bag: null, child: null }), 0, "ride", 1, px);
+  }
+  g.restore();
+}
+
+// ═══ Who and what is moving: vehicles driving on or off over the bow ramp, foot passengers, the quay crowd ═══
+const PH = 5;                                    // a grown-up's height in ferry units (a car is 10.5)
+const TIP = 72.4, PIER = -10.6;                  // ramp tip on the jetty, jetty surface (ferry units)
+const groundAt = x => x >= TIP ? PIER : x > 50 ? -10 + (x - 50) / (TIP - 50) * (PIER + 10) : -10;
+const smooth = k => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
+const DRIVE = { car: 6.2, auto: 5.6, bike: 4.4 }, WHEEL_R = { car: .99, auto: .56, bike: .62 }, Q_GAP = 1.4;
+const riderOf = j => Object.assign({}, PEOPLE[(j * 13 + 5) % 100], { helmet: ["#1f2937", "#b91c1c", "#f8fafc", "#1d4ed8", "#facc15"][j % 5] });
+// ease in, cruise, brake: fraction of the path covered after fraction u of the drive time
+function driveFrac(u) { // smooth: accelerate over the first quarter, brake over the last third
+  u = Math.max(0, Math.min(1, u));
+  const a = .25, b = .67, vmax = 1 / (1 - a / 2 - (1 - b) / 2);
+  if (u < a) return vmax * u * u / (2 * a);
+  if (u < b) return vmax * (a / 2 + (u - a));
+  const r = 1 - u; return 1 - vmax * r * r / (2 * (1 - b));
+}
+function parked(deck, dir, frac = 1) {
+  const A = [];
+  deck.vehicles.forEach((it, j) => A.push({ it, x: it.x + ITEM_W[it.k] / 2, y: it.y, dir, z: it.z, driver: it.k === "auto" }));
+  deck.people.slice(0, Math.round(frac * deck.people.length)).forEach(p => A.push({ P: p.P, x: p.x, y: p.y, dir: p.dir, z: 80 }));
+  return A;
+}
+// foot passengers walking along the jetty, over the ramp and in at the cabin door (or the other way)
+function footStream(A, t, inbound, keep) {
+  const X0 = 116, DOOR = -9, HW = 2.6, dist = X0 - DOOR;
+  for (let n = Math.floor(t / HW) - 30; n <= Math.floor(t / HW) + 30; n++) {
+    if (hsh(n) > .62) continue;
+    const P = PEOPLE[((n % 100) + 100) % 100], vel = 3.3 * P.speed, T = n * HW, spawn = inbound ? T - dist / vel : T;
+    if (t < spawn || t > spawn + dist / vel || !keep(t - spawn)) continue;
+    const d = vel * (t - spawn), x = inbound ? X0 - d : DOOR + d, dir = inbound ? -1 : 1;
+    const fade = inbound ? Math.min(1, (x - DOOR) / 5) : Math.min(1, (x - DOOR) / 5);
+    const ph = d / (PH * P.h * .8) * 6.283;
+    A.push({ P, x, y: groundAt(x) + .7, dir, walk: true, ph, z: 90 + (n % 3) * .1, alpha: fade });
+    if (P.child) A.push({ P: P.child, x: x + dir * 1.3, y: groundAt(x) + 1.1, dir, walk: true, ph: ph * 1.6, z: 90.5, alpha: fade });
+  }
+}
+function cargoActors(deck, v, el, t, unloadMin) {
+  const V = deck.vehicles, N = V.length, A = [];
+  if (v.kind === "night") return A;
+  if (v.kind !== "load" && v.kind !== "unload") return parked(deck, v.kind === "arrive" ? 1 : -1);
+  const len = it => ITEM_W[it.k];
+  if (v.kind === "load") {
+    const order = deck.boardOrder, base = Math.min(N, Math.floor(v.k * N)), start = [];
+    let tc = 0; for (let j = base; j < N; j++) { start[j] = tc; tc += DRIVE[order[j].k] * .6; }
+    let firstWait = N; for (let j = base; j < N; j++) if (el < start[j]) { firstWait = j; break; }
+    order.forEach((it, j) => {
+      const slot = it.x + len(it) / 2;
+      if (j < base || el >= start[j] + DRIVE[it.k]) { A.push({ it, x: slot, y: it.y, dir: -1, z: it.z, driver: it.k === "auto" }); return; }
+      if (el >= start[j]) {                                                      // driving: jetty → ramp → deck → its place
+        const xs = TIP + 2 + len(it) / 2, p = driveFrac((el - start[j]) / DRIVE[it.k]), cx = xs - (xs - slot) * p;
+        const turn = smooth((p - .72) / .28);
+        A.push({ it, x: cx, y: groundAt(cx) + (it.y + 10) * turn, dir: -1, rot: (xs - slot) * p / WHEEL_R[it.k], z: turn > .5 ? it.z : deck.rows - .5,
+                 rider: it.k === "bike" ? riderOf(j) : null, driver: it.k !== "bike" });
+        return;
+      }
+      let qx = TIP + 2;                                                          // waiting in line on the jetty
+      for (let i = firstWait; i < j; i++) qx += len(order[i]) + Q_GAP;
+      const prev = firstWait - 1;
+      if (prev >= base) { const since = el - start[prev]; if (since < 2) qx += (len(order[prev]) + Q_GAP) * (1 - smooth(since / 2)); }
+      if (qx > 128) return;
+      A.push({ it, x: qx + len(it) / 2, y: PIER, dir: -1, z: deck.rows + 1, rider: it.k === "bike" ? riderOf(j) : null, driver: it.k !== "bike" });
+    });
+    deck.people.slice(0, Math.round(v.k * deck.people.length)).forEach(p => A.push({ P: p.P, x: p.x, y: p.y, dir: p.dir, z: 80 }));
+    footStream(A, t, true, ago => v.left + ago > 60);
+  } else {
+    const order = deck.boardOrder.slice().reverse(), done = Math.min(1, Math.max(0, (v.k - .1) / .75)), base = Math.floor(done * N), start = [];
+    let tc = 0; for (let j = base; j < N; j++) { start[j] = tc; tc += DRIVE[order[j].k] * .6; }
+    order.forEach((it, j) => {
+      if (j < base) return;
+      const slot = it.x + len(it) / 2, u = (el - start[j]) / DRIVE[it.k];
+      if (v.k < .1 || u <= 0) { A.push({ it, x: slot, y: it.y, dir: 1, z: it.z, driver: it.k === "auto" }); return; }
+      if (u >= 1) return;                                                        // gone up the jetty
+      const xe = TIP + 64, p = driveFrac(u), cx = slot + (xe - slot) * p, turn = smooth(p / .28);
+      A.push({ it, x: cx, y: it.y + (groundAt(cx) - it.y) * turn, dir: 1, rot: (xe - slot) * p / WHEEL_R[it.k], z: turn < .5 ? it.z : deck.rows + .5,
+               rider: it.k === "bike" ? riderOf(j) : null, driver: it.k !== "bike" });
+    });
+    deck.people.slice(0, Math.round((1 - v.k) * deck.people.length)).forEach(p => A.push({ P: p.P, x: p.x, y: p.y, dir: p.dir, z: 80 }));
+    if (v.k > .1) footStream(A, t, false, ago => v.k - ago / (unloadMin * 60) < .85);
+  }
+  return A;
+}
+function drawActors(g, actors, pxPerUnit) {
+  actors.slice().sort((p, q) => p.z - q.z).forEach(a => {
+    if (a.alpha !== undefined && a.alpha <= 0) return;
+    if (a.alpha !== undefined && a.alpha < 1) g.globalAlpha = a.alpha;
+    if (a.P) drawPerson(g, a.x, a.y, PH * a.P.h, a.P, reduced ? 0 : a.ph || 0, a.walk ? "walk" : "stand", a.dir, PH * a.P.h * pxPerUnit);
+    else drawVehicle(g, a.it, a.x, a.y, a.dir, a.rot || 0, a.rider || (a.driver ? true : null), ITEM_W[a.it.k] * pxPerUnit);
+    g.globalAlpha = 1;
+  });
+}
+
+// ── Passenger boat at the quay: ONE staircase, used both to draw it and to move people on it (screen pixels) ──
+// It runs along the hull, rising towards the stern, from the quay up to the side door (door: ferry units x -22…-15.6, sill y -15.8).
+function stairOf(x, wl, S, qy) {
+  const top = { x: x - 15.6 * S, y: wl - 15.8 * S }, footY = qy + 9;
+  const rise = footY - top.y, run = rise / Math.tan(.6), n = Math.max(6, Math.round(rise / 5.5));
+  return { top, foot: { x: top.x + run, y: footY }, rise, run, n, len: Math.hypot(run, rise),
+           doorL: top.x, doorR: x - 15.6 * S, doorTop: wl - 26.2 * S, lane: footY, H: 6.6 * S, gap: 3 * S };
+}
+// height of the feet at x on the staircase: step by step, the body lifts as each foot lands on the next tread
+function stairY(ST, x) {
+  const u = Math.max(0, Math.min(ST.n, (ST.foot.x - x) / (ST.run / ST.n))), i = Math.floor(u), f = u - i;
+  return ST.foot.y - ST.rise / ST.n * Math.min(ST.n, i + smooth(Math.min(1, f * 2.2)));
+}
+function drawStair(g, ST, part) {
+  const { foot, top, n, rise, run } = ST, RH = ST.H * .55;
+  if (part === "back") {
+    g.strokeStyle = "#a8871f"; g.lineWidth = 1.2;                                      // far hand rail
+    g.beginPath(); g.moveTo(foot.x + 1.5, foot.y - RH - 1.5); g.lineTo(top.x + 1.5, top.y - RH - 1.5); g.stroke();
+    g.fillStyle = "#3f4650"; g.beginPath(); g.moveTo(foot.x + 3, foot.y + 1); g.lineTo(top.x - 2, top.y + 1);       // side beam
+    g.lineTo(top.x - 2, top.y + 5); g.lineTo(foot.x - 5, foot.y + 4); g.closePath(); g.fill();
+    for (let i = 0; i < n; i++) {                                                       // treads and risers
+      const x1 = foot.x - run * i / n, y1 = foot.y - rise * (i + 1) / n;
+      g.fillStyle = "#6b7280"; g.fillRect(x1 - 1.2, y1, 1.2, rise / n);
+      g.fillStyle = "#b3b9c1"; g.fillRect(x1 - run / n - .6, y1, run / n + .6, 1.7);
+    }
+    g.fillStyle = "#b3b9c1"; g.fillRect(ST.doorL - 1, top.y - .8, top.x - ST.doorL + 1, 2);   // landing at the door sill
+  } else {
+    g.strokeStyle = "#f2c230"; g.lineWidth = 1.6; g.lineCap = "round";                  // near hand rail and posts
+    g.beginPath(); g.moveTo(foot.x, foot.y - RH); g.lineTo(top.x, top.y - RH); g.stroke();
+    for (let i = 0; i <= n; i += 2) { const px = foot.x - run * i / n, py = foot.y - rise * i / n; g.beginPath(); g.moveTo(px, py - RH); g.lineTo(px, py); g.stroke(); }
+    g.beginPath(); g.moveTo(top.x, top.y - RH); g.lineTo(top.x, top.y); g.stroke();   // post at the landing
+  }
+}
+// Boarding: everyone comes along the quay from the right, facing the stairs, joins ONE queue, shuffles up as it moves,
+// climbs straight up the treads, steps over the sill and passes behind the wall beside the door.
+// Getting off: exactly the same path, backwards.
+function drawCrowd(g, w, h, Q, t, ST) {
+  const HW = 1.7, vWalk = ST.H * .8, vClimb = ST.H * .45, climbT = ST.len / vClimb, enterT = (ST.doorR - ST.doorL + ST.H * .4) / (ST.H * .5);
+  const WQ = 7, X0 = w + 30, board = Q.crowd.mode > 0, A = [];
+  for (let n = Math.floor((t - 70) / HW); n <= Math.floor((t + 70) / HW); n++) {
+    if (hsh(n + 77) > .78) continue;
+    const P = PEOPLE[((n % 100) + 100) % 100], H = ST.H * P.h, v = vWalk * (.97 + .06 * hsh(n + 3));
+    let x, y, dir, clip = false, d;
+    if (board) {
+      const T = n * HW;                                                                  // reaches the foot of the stairs
+      if (Q.crowd.left - (T - t) < 25) continue;                                         // boarding closes just before departure
+      const join = ST.foot.x + ST.gap * WQ / HW, spawn = T - WQ - (X0 - join) / v;
+      if (t < spawn || t > T + climbT + enterT) continue;
+      dir = -1;
+      if (t < T) { x = Math.max(ST.foot.x + ST.gap * (T - t) / HW, X0 - v * (t - spawn)); y = ST.lane; d = X0 - x; }   // walk, then queue
+      else if (t < T + climbT) { x = ST.foot.x - ST.run * (t - T) / climbT; y = stairY(ST, x); d = X0 - ST.foot.x + (ST.foot.x - x) * 1.3; }
+      else { const f = (t - T - climbT) / enterT; x = ST.doorR - (ST.doorR - ST.doorL + H * .4) * f; y = ST.top.y; clip = true; d = X0 - ST.foot.x + ST.len * 1.3 + (ST.doorR - x); }
+    } else {
+      const E = n * HW;                                                                  // steps off the sill onto the stairs
+      if (Q.crowd.k - (t - E + enterT) / Q.crowd.dur > .82) continue;                    // the boat is nearly empty by then
+      if (t < E - enterT || t > E + climbT + (X0 - ST.foot.x) / v) continue;
+      dir = 1;
+      if (t < E) { const f = (t - (E - enterT)) / enterT; x = ST.doorL - H * .4 + (ST.doorR - ST.doorL + H * .4) * f; y = ST.top.y; clip = true; d = x; }
+      else if (t < E + climbT) { x = ST.top.x + ST.run * (t - E) / climbT; y = stairY(ST, x); d = ST.doorR + (x - ST.top.x) * 1.3; }
+      else { x = ST.foot.x + v * (t - E - climbT); y = ST.lane; d = ST.doorR + ST.len * 1.3 + (x - ST.foot.x); }
+    }
+    A.push({ P, x, y, H, dir, clip, ph: d / (H * .8) * 6.283 });
+    if (P.child) {                                                                       // a child keeps to the parent's side
+      const cx = x - dir * H * .12, cy = clip ? y : y === ST.lane ? y + 1.5 : stairY(ST, cx);
+      A.push({ P: P.child, x: cx, y: cy, H: ST.H * P.child.h, dir, clip, ph: d / (H * .55) * 6.283, z: 1 });
+    }
+  }
+  A.forEach(a => {
+    if (a.clip) { g.save(); g.beginPath(); g.rect(ST.doorL, 0, w, h); g.clip(); }            // hidden by the cabin wall past the door
+    drawPerson(g, a.x, a.y, a.H, a.P, reduced ? 0 : a.ph, "walk", a.dir, a.H);
+    if (a.clip) g.restore();
+  });
+}
+
+// Ro-ro vehicle ferry like the harbour boats: cabin block astern, open car deck forward, bow ramp with black lifting arms.
+// Local units, facing right, waterline y = 0, deck y = -10. ramp: 0 = raised, 1 = lowered onto the jetty.
+function drawFerry(g, o) {
+  const { x, y, s, t, face, sp, night, ramp } = o;
+  g.save(); g.translate(x, y + Math.sin(t * 1.6) * .5 * s); g.rotate(Math.sin(t * 1.3) * .01 * (sp > .05 ? 1 : .4)); g.scale(s * face, s);
+  g.fillStyle = "rgba(4,30,36,.28)"; g.beginPath(); g.ellipse(0, 5, 56, 4, 0, 0, 6.283); g.fill();             // reflection
+  // what is on the open deck (drawn first, behind the side rail)
+  if (o.actors) drawActors(g, o.actors.filter(a => a.x < 50), s);
+  // hull: black, red below the waterline, raked bow
+  const hull = new Path2D("M-56 -10 L50 -10 L57 -13 L52 3 Q49 6 42 6 L-50 6 Q-56 4 -57 -1 Z");
+  g.fillStyle = "#1b1d21"; g.fill(hull);
+  g.save(); g.clip(hull); g.fillStyle = "#8e2b24"; g.fillRect(-60, 2, 120, 6); g.restore();
+  // low white bulwark and an open blue rail, so the cargo shows; the name in white on the black hull
+  g.fillStyle = night ? "#b9c0c6" : "#eef0f1"; g.fillRect(-6, -12, 55, 2);
+  g.strokeStyle = "#3d8fd6"; g.lineWidth = .55; g.beginPath(); g.moveTo(-6, -14.6); g.lineTo(42, -14.6); g.stroke();
+  for (let px = -6; px <= 42; px += 6) { g.beginPath(); g.moveTo(px, -14.6); g.lineTo(px, -12); g.stroke(); }
+  g.fillStyle = "#ffffff"; g.font = "700 2.9px Inter, system-ui, sans-serif"; g.textBaseline = "alphabetic";
+  g.save(); g.translate(38, -7.3); g.scale(face < 0 ? -1 : 1, 1); g.textAlign = "center";
+  g.fillText((o.name || "M.V.").replace(/^MV /, "M.V. "), 0, 0); g.restore();
+  // tyre fenders along the side
+  for (let i = 0; i < 9; i++) { const fx = -44 + i * 10; g.fillStyle = "#0d0e10"; g.beginPath(); g.arc(fx, -4.6, 2.3, 0, 6.283); g.fill(); g.fillStyle = "#34373c"; g.beginPath(); g.arc(fx, -4.6, 1, 0, 6.283); g.fill(); }
+  // cabin block astern: portholes, blue-railed upper deck, green canopy, wheelhouse, yellow mast
+  let gr = g.createLinearGradient(0, -36, 0, -10); gr.addColorStop(0, night ? "#c9d0d6" : "#ffffff"); gr.addColorStop(1, night ? "#9aa3ab" : "#dfe4e8");
+  g.fillStyle = gr; g.fillRect(-56, -26, 50, 16); g.fillRect(-52, -35, 42, 9);
+  for (let i = 0; i < 6; i++) { g.fillStyle = night ? "#ffd98a" : "#26323f"; g.beginPath(); g.arc(-50 + i * 7, -18.5, 1.3, 0, 6.283); g.fill(); }
+  g.fillStyle = "#26323f"; g.fillRect(-12, -22, 4, 12);                                                            // door to the car deck
+  for (let i = 0; i < 5; i++) { g.fillStyle = night ? "#ffd98a" : "#2b4f7a"; g.fillRect(-49 + i * 7.5, -32.6, 4.4, 3); }
+  g.strokeStyle = "#3d8fd6"; g.lineWidth = .7; g.beginPath(); g.moveTo(-52, -38.5); g.lineTo(-10, -38.5); g.stroke();
+  for (let i = 0; i <= 14; i++) { g.beginPath(); g.moveTo(-52 + i * 3, -38.5); g.lineTo(-52 + i * 3, -35); g.stroke(); }
+  g.fillStyle = "#2e9a5a"; g.beginPath(); g.moveTo(-54, -41); g.lineTo(-30, -41); g.lineTo(-29, -39.6); g.lineTo(-55, -39.6); g.fill();   // green canopy
+  g.strokeStyle = "#8b959e"; g.lineWidth = .5; [-53, -42, -31].forEach(px => { g.beginPath(); g.moveTo(px, -39.6); g.lineTo(px, -35); g.stroke(); });
+  g.fillStyle = night ? "#c9d0d6" : "#ffffff"; g.fillRect(-27, -44, 15, 9);                                      // wheelhouse
+  g.fillStyle = night ? "#3b4b62" : "#18273a"; g.fillRect(-25.5, -42.2, 12, 2.6);
+  g.fillStyle = "#f2c230"; g.fillRect(-20.5, -60, 1.8, 16); g.fillRect(-25, -55, 11, 1.1); g.fillRect(-23.5, -50.5, 8, 1);   // yellow mast
+  g.fillStyle = "#ff9933"; g.fillRect(-18.5, -60, 5, 1.1); g.fillStyle = "#ffffff"; g.fillRect(-18.5, -58.9, 5, 1.1); g.fillStyle = "#138808"; g.fillRect(-18.5, -57.8, 5, 1.1);
+  g.fillStyle = "#e8eaec"; g.fillRect(-56.5, -28, 2, 5); g.fillStyle = "#e5512f"; g.beginPath(); g.arc(-7, -30, 1.6, 0, 6.283); g.fill();   // life ring
+  // bow: lifting arms (notched black frames), blue rail, the ramp
+  g.fillStyle = "#16181b";
+  g.beginPath(); g.moveTo(43, -10); g.lineTo(49, -10); g.lineTo(46, -38); g.lineTo(43.5, -38); g.lineTo(44.4, -33); g.lineTo(42.6, -31); g.lineTo(43.6, -26);
+  g.lineTo(41.8, -24); g.lineTo(42.8, -19); g.lineTo(41, -17); g.closePath(); g.fill();
+  g.strokeStyle = "#3d8fd6"; g.lineWidth = .7; g.beginPath(); g.moveTo(36, -19); g.lineTo(44, -19); g.stroke();
+  const a = (1 - ramp) * -1.25 + ramp * .06, rl = 19, hx = 54, hy = -10.8;
+  const tx = hx + Math.cos(a) * rl, ty = hy + Math.sin(a) * rl;
+  g.strokeStyle = "#5c6066"; g.lineWidth = .45; g.beginPath(); g.moveTo(45.5, -37); g.lineTo(tx, ty); g.stroke();   // lifting wire
+  g.save(); g.translate(hx, hy); g.rotate(a);
+  g.fillStyle = "#3a3d42"; g.fillRect(0, -1.3, rl, 2.6); g.fillStyle = "#6a6f76"; g.fillRect(0, -1.3, rl, .6);
+  g.fillStyle = "#2a2c30"; for (let i = 2; i < rl; i += 3) g.fillRect(i, -.7, .5, 1.6);
+  g.restore();
+  // whatever is on the ramp or the jetty: drawn after the ramp so wheels sit on it
+  if (o.actors) drawActors(g, o.actors.filter(a => a.x >= 50), s);
+  if (night) { g.fillStyle = "#ff3b30"; g.beginPath(); g.arc(-56, -26, 1.1, 0, 6.283); g.fill(); g.fillStyle = "#34c759"; g.beginPath(); g.arc(-6, -44, 1.1, 0, 6.283); g.fill(); }
+  // bow wave and stern wash grow with speed
+  if (sp > .03) {
+    g.fillStyle = `rgba(255,255,255,${.85 * sp})`;
+    g.beginPath(); g.moveTo(51, 0); g.quadraticCurveTo(60, -4 * sp, 68 + 8 * sp, 3); g.quadraticCurveTo(60, 5, 49, 5); g.closePath(); g.fill();
+    const L = 60 * sp, wg = g.createLinearGradient(-56, 0, -56 - L, 0);
+    wg.addColorStop(0, `rgba(255,255,255,${.8 * sp})`); wg.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = wg; g.beginPath(); g.moveTo(-55, 1); g.quadraticCurveTo(-56 - L / 2, -1.5, -56 - L, 2.5); g.quadraticCurveTo(-56 - L / 2, 6.5, -55, 5.5); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+
+function drawPax(g, o) {
+  const { x, y, s, t, face, sp, night, ramp } = o;
+  g.save(); g.translate(x, y + Math.sin(t * 1.7) * .6 * s); g.rotate(Math.sin(t * 1.4) * .012 * (sp > .05 ? 1 : .4)); g.scale(s * face, s);
+  g.fillStyle = "rgba(4,30,36,.28)"; g.beginPath(); g.ellipse(0, 5, 52, 4, 0, 0, 6.283); g.fill();
+  const hull = new Path2D("M-48 -15 L44 -16 L56 -21 L50 1 Q46 6 38 6 L-44 6 Q-50 4 -50 -3 Z");
+  g.fillStyle = night ? "#1f3a8a" : "#2547b8"; g.fill(hull);
+  g.save(); g.clip(hull); g.fillStyle = "#1a1f3a"; g.fillRect(-60, 2.5, 120, 6); g.restore();
+  g.fillStyle = "#14161a"; g.beginPath(); g.moveTo(-48, -15.6); g.lineTo(44, -16.6); g.lineTo(56, -21.6); g.lineTo(56, -20.4); g.lineTo(44, -15.4); g.lineTo(-48, -14.4); g.fill();
+  for (let i = 0; i < 5; i++) { const fx = -34 + i * 15; g.fillStyle = "#0d0e10"; g.beginPath(); g.arc(fx, -10, 2.4, 0, 6.283); g.fill(); g.fillStyle = "#34373c"; g.beginPath(); g.arc(fx, -10, 1, 0, 6.283); g.fill(); }
+  g.save(); g.translate(36, -5); g.scale(face < 0 ? -1 : 1, 1); g.fillStyle = "#ffffff"; g.font = "700 3.4px Inter, system-ui, sans-serif";
+  g.textAlign = "center"; g.textBaseline = "alphabetic"; g.fillText((o.name || "").replace(/^MV /, "M.V. "), 0, 0); g.restore();
+  for (let i = 0; i < 9; i++) { g.fillStyle = i % 2 ? "#14161a" : "#f2c230"; g.fillRect(22 + i * 3.2, -21, 3.2, 1); }   // yellow-black foredeck rail
+  g.fillStyle = "#c9a227"; for (let i = 0; i < 4; i++) g.fillRect(23 + i * 8, -21, .6, 5);
+  const W = night ? "#c9d0d6" : "#f6f7f8", win = night ? "#ffd27a" : "#22324a";
+  g.fillStyle = W; g.fillRect(-44, -27, 66, 11.5);                                // main deck cabin
+  g.fillStyle = win; for (let i = 0; i < 9; i++) g.fillRect(-41 + i * 7, -25, 5, 3.4);
+  g.fillStyle = "#2547b8"; g.fillRect(-44, -19.5, 66, 1.4);                          // blue stripe
+  g.fillStyle = "#d8322b"; g.font = "700 2.2px Inter, system-ui, sans-serif"; g.textAlign = "left";
+  g.save(); g.translate(-10, -16.6); g.scale(face < 0 ? -1 : 1, 1); g.fillText("SAFETY FIRST", face < 0 ? -12 : 0, 0); g.restore();
+  g.fillStyle = W; g.fillRect(-38, -36, 48, 9);                                     // upper deck
+  g.fillStyle = win; for (let i = 0; i < 6; i++) g.fillRect(-35 + i * 7, -34.2, 5, 3);
+  g.strokeStyle = "#9aa3ab"; g.lineWidth = .45; g.beginPath(); g.moveTo(-38, -38.5); g.lineTo(10, -38.5); g.stroke();
+  g.fillStyle = "#e5512f"; [-34, -26, -18, -40, 16].forEach((rx, i) => { g.beginPath(); g.arc(rx, i < 3 ? -38.3 : -29, 1.5, 0, 6.283); g.fill(); });
+  g.fillStyle = W; g.beginPath(); g.moveTo(-14, -36); g.lineTo(12, -36); g.lineTo(9, -45); g.lineTo(-14, -45); g.fill();   // wheelhouse
+  g.fillStyle = win; g.beginPath(); g.moveTo(-1, -38); g.lineTo(10.4, -38); g.lineTo(8.6, -43.4); g.lineTo(-1, -43.4); g.fill();
+  g.fillStyle = "#3a3d42"; g.fillRect(-30, -42, 4, 6);                              // exhaust
+  g.fillStyle = "#eef0f1"; g.fillRect(-3.5, -58, 1.4, 13); g.fillRect(-9, -53, 12, 1);   // mast and radar bar
+  g.fillStyle = "#ff9933"; g.fillRect(-2.2, -58, 4.5, 1); g.fillStyle = "#ffffff"; g.fillRect(-2.2, -57, 4.5, 1); g.fillStyle = "#138808"; g.fillRect(-2.2, -56, 4.5, 1);
+  if (ramp > 0) {                                                                   // gangway onto the jetty
+    g.save(); g.translate(50, -16); g.rotate(.36); g.fillStyle = "#5c6066"; g.fillRect(0, -.7, 15 * ramp, 1.6);
+    g.strokeStyle = "#f2c230"; g.lineWidth = .5; g.beginPath(); g.moveTo(0, -4); g.lineTo(15 * ramp, -4); g.stroke();
+    for (let i = 0; i <= 3; i++) { g.beginPath(); g.moveTo(i * 5 * ramp, -4); g.lineTo(i * 5 * ramp, -.7); g.stroke(); } g.restore();
+  }
+  const din = g.createLinearGradient(0, -26.2, 0, -15.8); din.addColorStop(0, "#0f161e"); din.addColorStop(1, "#2a3644");
+  g.fillStyle = din; g.fillRect(-22, -26.2, 6.4, 10.4);                                // side door (boarding), open
+  g.fillStyle = "#c9ced4"; g.fillRect(-22.6, -26.8, 7.6, .7); g.fillRect(-22.6, -26.8, .6, 11); g.fillRect(-16, -26.8, .6, 11);
+  if (night) { g.fillStyle = "#ff3b30"; g.beginPath(); g.arc(-46, -20, 1.1, 0, 6.283); g.fill(); g.fillStyle = "#34c759"; g.beginPath(); g.arc(12, -44, 1.1, 0, 6.283); g.fill(); }
+  if (sp > .03) {
+    g.fillStyle = `rgba(255,255,255,${.85 * sp})`;
+    g.beginPath(); g.moveTo(51, 0); g.quadraticCurveTo(60, -4 * sp, 68 + 8 * sp, 3); g.quadraticCurveTo(60, 5, 49, 5); g.closePath(); g.fill();
+    const L = 60 * sp, wg = g.createLinearGradient(-50, 0, -50 - L, 0);
+    wg.addColorStop(0, `rgba(255,255,255,${.8 * sp})`); wg.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = wg; g.beginPath(); g.moveTo(-49, 1); g.quadraticCurveTo(-50 - L / 2, -1.5, -50 - L, 2.5); g.quadraticCurveTo(-50 - L / 2, 6.5, -49, 5.5); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+const drawVessel = (g, type, o) => type === "pax" ? drawPax(g, o) : drawFerry(g, o);
+
+// The quay in the foreground (we stand on it), bollards, mooring ropes, the deckhand at the bow, passengers walking
+function drawQuay(g, w, h, Q, x, wl, S, t, night, name) {
+  const { qy, xd, bowRope, sternRope, walk, throwing } = Q;
+  const gr = g.createLinearGradient(0, qy, 0, h);
+  gr.addColorStop(0, night ? "#6f6c66" : "#d6d1c6"); gr.addColorStop(1, night ? "#4b4945" : "#b8b1a4");
+  g.fillStyle = gr; g.fillRect(0, qy, w, h - qy);
+  g.fillStyle = night ? "#3b3936" : "#7b766c"; g.fillRect(0, qy, w, 2);
+  g.fillStyle = "#d9b53a"; g.fillRect(0, qy + 3, w, 2.2);                         // yellow edge line
+  g.strokeStyle = "rgba(60,55,48,.35)"; g.lineWidth = 1;
+  [[.12, .2], [.63, .55]].forEach(([a, b]) => { g.beginPath(); g.moveTo(w * a, qy + 6); g.lineTo(w * (a - .04), h); g.stroke(); });
+  g.beginPath(); g.moveTo(0, qy + (h - qy) * .62); g.lineTo(w, qy + (h - qy) * .6); g.stroke();
+  // bollards near bow and stern of the berth
+  const bb = xd + 57 * S, sb = xd - 55 * S, by = qy + 5;
+  [bb, sb].forEach(px => { g.fillStyle = "#1d1f22"; g.fillRect(px - 4, by - 7, 8, 7); g.beginPath(); g.ellipse(px, by - 7, 6, 2.6, 0, 0, 6.283); g.fill();
+    g.fillStyle = "#3a3d42"; g.beginPath(); g.ellipse(px, by - 7.6, 4, 1.4, 0, 0, 6.283); g.fill(); });
+  const bowPt = [x + 47 * S, wl - 20.5 * S], sternPt = [x - 46 * S, wl - 15 * S];
+  const rope = (a, b, sag) => { g.strokeStyle = "#d8b13c"; g.lineWidth = 2; g.beginPath(); g.moveTo(a[0], a[1]);
+    g.quadraticCurveTo((a[0] + b[0]) / 2, Math.max(a[1], b[1]) + sag, b[0], b[1]); g.stroke(); };
+  if (sternRope) rope(sternPt, [sb, by - 8], 6);
+  if (bowRope > 0) {                                                              // tied, or being lifted back aboard
+    const k = 1 - bowRope, end = [bb + (bowPt[0] - bb) * k, by - 8 + (bowPt[1] - by + 8) * k - Math.sin(Math.PI * k) * 18];
+    rope(bowPt, end, 8 * bowRope);
+  } else if (throwing > 0) {                                                      // thrown from the bow, lands on the bollard
+    const k = throwing, end = [bowPt[0] + (bb - bowPt[0]) * k, bowPt[1] + (by - 8 - bowPt[1]) * k - Math.sin(Math.PI * k) * 26];
+    rope(bowPt, end, 4);
+  }
+  // jetty name board standing on the quay
+  const bw = Math.min(w * .27, 124), bh = 26, bx = 8, bty = qy - 64;
+  g.fillStyle = "#6d7680"; g.fillRect(bx + bw * .2, bty + bh, 2.5, qy + 4 - bty - bh); g.fillRect(bx + bw * .8, bty + bh, 2.5, qy + 4 - bty - bh);
+  g.fillStyle = "#1c3d8f"; g.fillRect(bx, bty, bw, bh); g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(bx + 2.5, bty + 2.5, bw - 5, bh - 5);
+  g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
+  let fs = 11; g.font = `700 ${fs}px Inter, system-ui, sans-serif`;
+  while (g.measureText(name.toUpperCase()).width > bw - 12 && fs > 7) { fs -= .5; g.font = `700 ${fs}px Inter, system-ui, sans-serif`; }
+  g.fillText(name.toUpperCase(), bx + bw / 2, bty + bh * .38); g.font = `600 ${fs * .8}px Inter, system-ui, sans-serif`; g.fillText("JETTY", bx + bw / 2, bty + bh * .72);
+  // the staircase (same geometry the people walk on), the people, then the hand rail nearest to us
+  const ST = stairOf(x, wl, S, qy);
+  if (Q.crowd || Q.docked) drawStair(g, ST, "back");
+  if (Q.crowd) drawCrowd(g, w, h, Q, reduced ? 0 : t, ST);
+  if (Q.crowd || Q.docked) drawStair(g, ST, "front");
+  // deckhand at the bow, handling the bow line
+  drawPerson(g, x + 41 * S, wl - 20.5 * S, 6.2 * S, CREW, 0, "stand", -1, 6.2 * S);
+}
+
+// name tag floating over the car deck
+function tag(g, x, y, text, a) {
+  if (!text) return;
+  g.font = "700 10px Inter, system-ui, sans-serif"; const tw = g.measureText(text).width + 12;
+  g.globalAlpha = a; g.fillStyle = "rgba(255,255,255,.92)"; g.beginPath(); g.roundRect(x - tw / 2, y - 9, tw, 18, 9); g.fill();
+  g.fillStyle = "#13306e"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, x, y + .5); g.globalAlpha = 1;
+}
+
+function drawVoyage(fig, t) {
+  const cv2 = fig.querySelector("canvas"), w = cv2.clientWidth, h = cv2.clientHeight;
+  if (!w || !h) return;
+  let st = VOY.get(fig);
+  if (!st || st.w !== w || st.h !== h || st.key !== sky[1]) {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    cv2.width = w * dpr; cv2.height = h * dpr;
+    st = { w, h, dpr, key: sky[1], parts: [], bgs: {}, step: "", cap: "", shot: st && st.shot };
+    VOY.set(fig, st);
+  }
+  const nowS = (Date.now() / 1000 + 19800) % 86400;                               // Port Blair time (UTC+5:30)
+  // follow this figure's boat; "your" trip is the sailing it was opened for (if any)
+  const boat = BY_ID[fig.dataset.boat]; if (!boat) return;
+  const selD = fig.dataset.trip === "" ? null : +fig.dataset.trip;
+  const lastFw = selD === null ? null : boat.trips.find(tr => tr.d === selD && (!fig.dataset.from || tr.a === fig.dataset.from));
+  const gone = tr => (tr.d + Math.max(tr.bo.times[0], VIS_CAST)) * 60 <= nowS, mine = !!lastFw && !gone(lastFw);
+  const v = vesselState(boat.trips, boat.times, nowS), pax = boat.type === "pax";
+  v.fwd = !lastFw || (v.d === lastFw.d && v.a === lastFw.a) ? 1 : 0;
+  const anim = reduced ? 0 : t, night = isNight(sceneMin), hz = h * .46;
+
+  // which shot: the jetty it is at, or open sea
+  const side = (v.kind === "arrive" || v.kind === "unload") ? "R" : "L";
+  const mode = v.kind === "sail" ? "sea" : pax ? "Q" : side;                   // passenger boats berth alongside the quay
+  const jname = side === "R" ? v.b : v.a, shot = mode + jname, quay = mode === "Q";
+  if (st.shot !== shot) { if (st.shot && !reduced) cv2.animate([{ opacity: .15 }, { opacity: 1 }], { duration: 650, easing: "ease-out" }); st.shot = shot; st.parts = []; st.shotT = t; }
+  const bg = st.bgs[shot] || (st.bgs[shot] = buildVoyageBg(st, mode, jname));
+  const g = cv2.getContext("2d"); g.setTransform(st.dpr, 0, 0, st.dpr, 0, 0);
+  g.drawImage(bg, 0, 0, w, h);
+  const run = mode === "sea" ? anim * 26 : 0;                                     // at sea the world slides past
+  if (mode === "sea") hills(g, w, hz, h, night, run * .25 + 1);
+  if (!night) for (let i = 0; i < 3; i++) {                                        // clouds
+    const cx = ((i * .37 + .1) * w + anim * (4 + i * 2) - run * .1) % (w + 120); const x0 = (cx + w + 120) % (w + 120) - 60, cy = h * (.12 + i * .07), k = 1 - i * .2;
+    g.fillStyle = "rgba(255,255,255,.85)";
+    [[0, 0, 22], [16, -6, 16], [30, 1, 14], [-14, 3, 12]].forEach(([dx, dy, r]) => { g.beginPath(); g.arc(x0 + dx * k, cy + dy * k, r * k * .6, 0, 6.283); g.fill(); });
+  }
+  const rr = vrand(3);                                                           // ripples
+  for (let i = 0; i < 34; i++) {
+    const depth = rr(), y = hz + 4 + depth * depth * (h - hz - 6), x = (((rr() * w + anim * (6 + depth * 18) - run * (1 + depth * 2)) % w) + w) % w;
+    const a = (.12 + .25 * depth) * (.5 + .5 * Math.sin(anim * 1.6 + i));
+    g.strokeStyle = `rgba(255,255,255,${night ? a * .4 : a})`; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + 6 + depth * 14, y); g.stroke();
+  }
+
+  const s = w * (mode === "L" || mode === "R" ? .0062 : FS), pw = w * JW, deckY = h * .6; let wl = deckY + 10 * s + 1;
+  const deck = pax ? null : deckFor(v.a || boat.trips[0].a, v.b || boat.trips[0].b);
+  const bow = pax ? 46 : 57, xL = pw + bow * s + 4, xR = w - pw - bow * s - 4;                           // docked, bow ramp over the jetty
+  let x = xL, face = -1, sp = 0, ramp = 0, load = 0;
+  if (v.kind === "load") {
+    ramp = 1; load = v.k;
+  } else if (v.kind === "cast") {                                                 // ramp up, then back off and swing round
+    load = 1; ramp = Math.max(0, 1 - v.k / .5);
+    const k2 = Math.max(0, (v.k - .5) / .5);
+    x = xL + w * .45 * k2 * k2; face = -Math.cos(Math.PI * Math.min(1, k2 * 1.4)); sp = k2 * .5;
+    if (Math.abs(face) < .15) face = face < 0 ? -.15 : .15;
+  } else if (v.kind === "sail") {
+    x = w * .5 + Math.sin(anim * .3) * w * .02; face = 1; sp = .95; load = 1;
+    const by = hz + (h - hz) * .45, bx = ((w + 40) - (run * 1.6) % (w + 140));   // a channel buoy drifting past
+    g.fillStyle = "#c8322b"; g.beginPath(); g.moveTo(bx, by - 12); g.lineTo(bx + 4, by); g.lineTo(bx - 4, by); g.fill();
+    g.fillStyle = "#f2f2f2"; g.fillRect(bx - 4, by - 4, 8, 2);
+  } else if (v.kind === "arrive") {                                               // comes alongside bow first
+    const e = 1 - Math.pow(1 - v.k, 3); x = -w * .3 + (xR + w * .3) * e; face = 1; sp = .9 * (1 - v.k) + .05; load = 1;
+  } else if (v.kind === "unload") {
+    x = xR; face = 1; ramp = Math.min(1, v.k / .1); load = Math.max(0, 1 - v.k * 1.15);
+  }
+  // Passenger boat at the quay, as seen standing on the jetty: lying alongside, tied bow and stern to bollards.
+  let S = s, WL = wl, Q = null;
+  if (quay) {
+    const qy = h * .7, xd = w * .5, ease = k => 1 - Math.pow(1 - k, 3);
+    S = Math.min(w * .0082, h * .0125); WL = qy + 4 * S; x = xd; face = 1; ramp = 0; sp = 0;
+    let off = 0, bowRope = 1, sternRope = 1, walk = 0, throwing = 0;
+    if (v.kind === "cast") {                                                      // crew lifts the rope off, then she pulls away
+      sternRope = v.k < .15 ? 1 : 0; bowRope = Math.min(1, Math.max(0, 1 - (v.k - .15) / .3));   // stern line first, then the bow line
+      const e = Math.max(0, (v.k - .45) / .55); x = xd + w * 1.05 * e * e; off = 22 * ease(e); sp = .15 + .6 * e;
+    } else if (v.kind === "arrive") {                                             // comes in alongside; rope thrown to the bollard
+      const e = ease(Math.min(1, v.k / .78)); x = -w * .6 + (xd + w * .6) * e; off = 22 * (1 - e); sp = .75 * (1 - e) + .05;
+      sternRope = 0; bowRope = v.k > .78 ? 0 : -1; throwing = v.k > .78 ? (v.k - .78) / .22 : 0;
+    }
+    S *= 1 - off / 140; WL -= off;
+    const crowd = v.kind === "load" ? { mode: 1, left: v.left } : v.kind === "unload" ? { mode: -1, k: v.k, dur: boat.times[2] * 60 } : null;
+    Q = { qy, xd, bowRope, sternRope, throwing, crowd, docked: v.kind === "night" };
+  }
+
+  if (sp > .15 && !reduced) st.parts.push({ x: x - 56 * S * Math.sign(face), y: WL + (Math.random() * 3 - 1) * S, r: 1 + Math.random() * 1.5, life: 1, vx: -.25 * Math.sign(face) - (mode === "sea" ? 1.6 : 0) });
+  st.parts = st.parts.filter(q => (q.life -= .012) > 0);
+  st.parts.forEach(q => { q.x += q.vx; q.r += .04; g.fillStyle = `rgba(255,255,255,${q.life * .55})`; g.beginPath(); g.ellipse(q.x, q.y, q.r * 1.8, q.r * .6, 0, 0, 6.283); g.fill(); });
+  const others = [];
+  if (mode === "sea") for (const b of BOATS) if (b !== boat && b.pair === boat.pair) {
+    const o = vesselState(b.trips, b.times, nowS);
+    if (o.kind === "sail" && o.a === v.b) {                                        // coming the other way: you meet mid-channel
+      // the meeting plays once, over 10 s, and only while the boats have not yet met; never again for that trip
+      const mk = "met:" + v.d + v.a + o.d, seen = (() => { try { return localStorage.getItem(mk); } catch (e) { return null; } })();
+      if (st.metKey !== mk) { st.metKey = mk; st.metT = (o.k < .5 && !seen) ? t : null; }
+      const pass = st.metT === null ? 2 : reduced ? .5 : (t - st.metT) / 10;
+      if (pass >= 1 && st.metT !== null) { st.metT = null; try { localStorage.setItem(mk, "1"); } catch (e) {} }
+      const ox = w * 1.35 - pass * w * 1.7, os = s * .55, owl = hz + 5;            // far lane, seen over your open car deck
+      others.push({ k: o.k, name: b.label });
+      if (ox > -w * .3 && ox < w * 1.3) drawVessel(g, b.type, { x: ox, y: owl, s: os, t: anim + 2, face: -1, sp: .9, night, ramp: 0, name: b.name, actors: b.type === "vf" ? parked(deckFor(o.a, o.b), -1) : null });
+    }
+  }
+  const actors = pax ? null : cargoActors(deck, v, reduced ? 0 : anim - st.shotT, anim, boat.times[2]);
+  drawVessel(g, boat.type, { x, y: WL, s: S, t: anim, face, sp, night, ramp, name: boat.name, actors });
+  if (Q) drawQuay(g, w, h, Q, x, WL, S, anim, night, jname);
+
+  if (mode === "sea") {                                                           // route strip: from ── boat ── to
+    const y = 62, x0 = 16, x1 = w - 16, bx = x0 + (x1 - x0) * v.k;
+    g.fillStyle = "rgba(19,48,110,.78)"; g.beginPath(); g.roundRect(x0 - 8, y - 14, x1 - x0 + 16, 28, 14); g.fill();
+    g.font = "700 10px Inter, system-ui, sans-serif"; g.textBaseline = "middle"; g.fillStyle = "#fff";
+    const la = v.a.toUpperCase(), lb = v.b.toUpperCase(), wa = g.measureText(la).width, wb = g.measureText(lb).width;
+    g.textAlign = "left"; g.fillText(la, x0, y); g.textAlign = "right"; g.fillText(lb, x1, y);
+    const l0 = x0 + wa + 8, l1 = x1 - wb - 8, px = l0 + (l1 - l0) * v.k;
+    g.strokeStyle = "rgba(255,255,255,.35)"; g.lineWidth = 2; g.setLineDash([3, 4]); g.beginPath(); g.moveTo(l0, y); g.lineTo(l1, y); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = "#ffd166"; g.beginPath(); g.moveTo(l0, y); g.lineTo(px, y); g.stroke();
+    others.forEach(o => { g.fillStyle = "#ffffff"; g.beginPath(); g.arc(l0 + (l1 - l0) * (1 - o.k), y, 3.5, 0, 6.283); g.fill(); });
+    g.fillStyle = "#ffd166"; g.beginPath(); g.arc(px, y, 4.5, 0, 6.283); g.fill();
+  }
+
+  // captions
+  const mins = d => Math.max(1, Math.ceil(d));
+  const inT = m => m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+  const yours = () => mine ? ` · then your <b>${fmt(lastFw.d)}</b> from ${lastFw.a}` : "";
+  let step, cap;
+  if (v.kind === "load") { step = `1|${pax ? "Boarding" : "Loading"} at ${v.a} Jetty`; cap = v.fwd ? `Leaves <b>${fmt(v.d)}</b> · in ${inT(mins(v.left / 60))}`
+                                    : `Leaves for ${v.b} ${fmt(v.d)}` + yours(); }
+  else if (v.kind === "cast") { step = v.quick ? `2|Leaving ${v.a} Jetty` : `2|Casting off from ${v.a} Jetty`; cap = `${pax ? "Ropes off" : "Ramp up"} <b>${fmt(v.d)}</b> · reaches ${v.b} ${fmt(v.arr)}` + (v.fwd ? "" : yours()); }
+  else if (v.kind === "sail") { step = `3|At sea to ${v.b}`; cap = v.fwd ? `Left ${v.a} ${fmt(v.d)} · arrives <b>${fmt(v.arr)}</b> · ${mins(v.left)} min to go`
+                                    : `Coming to ${v.b} · arrives <b>${fmt(v.arr)}</b>` + yours(); }
+  else if (v.kind === "arrive") { step = `3|Arriving at ${v.b} Jetty`; cap = `Coming alongside · due <b>${fmt(v.arr)}</b>` + (v.fwd ? "" : yours()); }
+  else if (v.kind === "unload") { step = `4|${pax ? "Getting off" : "Unloading"} at ${v.b} Jetty`; cap = `${pax ? "Passengers" : deck.kinds.includes("car") ? "Vehicles and passengers" : "Two-wheelers and passengers"} getting off` + (v.fwd ? "" : yours()); }
+  else { step = `•|Docked at ${v.a} Jetty`; cap = `No more trips today · first trip tomorrow <b>${fmt(boat.trips[0].d)}</b> from ${boat.trips[0].a}`; }
+  if (step !== st.step) {
+    st.step = step; let [n, txt] = step.split("|"), el = fig.querySelector(".step");
+    if (!boat.times[0] && n > 2) n -= 1;                                            // no casting-off pause on this route
+    el.querySelector("b").textContent = n; el.querySelector("span").textContent = txt;
+    el.classList.remove("swap"); void el.offsetWidth; el.classList.add("swap");
+  }
+  if (!pax && v.kind === "load" && VRULE[v.a + "|" + v.b])
+    cap += `<small>${VRULE[v.a + "|" + v.b]}</small>`;
+  if (cap !== st.cap) { st.cap = cap; fig.querySelector(".vcap").innerHTML = cap; }
+}
+
+function voyLoop(ms) {
+  if (!document.hidden) document.querySelectorAll(".voyage").forEach(f => {
+    const r = f.getBoundingClientRect();
+    if (r.bottom > 0 && r.top < innerHeight) drawVoyage(f, ms / 1000);
+  });
+  requestAnimationFrame(voyLoop);
+}
+addEventListener("resize", () => { if (reduced) document.querySelectorAll(".voyage").forEach(f => drawVoyage(f, 6.75)); });
+
+// ── start ──
+const p0 = ist();
+setSky(Math.floor(nowSec(p0) / 60));
+buildAll(); renderChips(); route(); startSea();
+if (!reduced) requestAnimationFrame(voyLoop);
+if (document.fonts) document.fonts.ready.then(() => { movePill(); placeMarker(nowSec(ist())); });
+setInterval(() => {
+  const p = ist(), m = Math.floor(nowSec(p) / 60);
+  if (m !== lastMinute) { setSky(m); render(p); } else tick(p);
+}, 1000);
+</script>

@@ -864,7 +864,7 @@ function deckFor(a, b) {
   ["car", "auto", "bike"].forEach(k => { for (let i = 0; i < (spec[k] || 0); i++) veh.push(k); });
   for (let i = veh.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [veh[i], veh[j]] = [veh[j], veh[i]]; }
   const rows = [[]]; let used = 0;
-  veh.forEach(k => { if (used + ITEM_W[k] > 48) { rows.push([]); used = 0; } rows[rows.length - 1].push({ k, x: -4 + used }); used += ITEM_W[k]; });
+  veh.forEach(k => { if (used + ITEM_W[k] > 43) { rows.push([]); used = 0; } rows[rows.length - 1].push({ k, x: -4 + used }); used += ITEM_W[k]; });
   const R = rows.length, items = [];
   let n = 0;
   rows.forEach((row, r) => row.forEach((it, i) => { n++;
@@ -1268,11 +1268,11 @@ function cargoActors(deck, v, el, t, unloadMin) {
     let firstWait = N; for (let j = base; j < N; j++) if (el < start[j]) { firstWait = j; break; }
     order.forEach((it, j) => {
       const slot = it.x + len(it) / 2;
-      if (j < base || el >= start[j] + DRIVE[it.k]) { A.push({ it, x: slot, y: it.y, dir: -1, z: it.z, driver: it.k === "auto" }); return; }
+      if (j < base || el >= start[j] + DRIVE[it.k]) { A.push({ it, x: slot, y: it.y, dir: -1, z: it.z, lane: 1, driver: it.k === "auto" }); return; }
       if (el >= start[j]) {                                                      // driving: jetty → ramp → deck → its place
         const xs = TIP + 2 + len(it) / 2, p = driveFrac((el - start[j]) / DRIVE[it.k]), cx = xs - (xs - slot) * p;
         const turn = smooth((p - .72) / .28);
-        A.push({ it, x: cx, y: groundAt(cx) + (it.y + 10) * turn, dir: -1, rot: (xs - slot) * p / WHEEL_R[it.k], z: turn > .5 ? it.z : deck.rows - .5,
+        A.push({ it, x: cx, y: groundAt(cx) + (it.y + 10) * turn, dir: -1, lane: turn, rot: (xs - slot) * p / WHEEL_R[it.k], z: turn > .5 ? it.z : deck.rows - .5,
                  rider: it.k === "bike" ? riderOf(j) : null, driver: it.k !== "bike" });
         return;
       }
@@ -1281,7 +1281,7 @@ function cargoActors(deck, v, el, t, unloadMin) {
       const prev = firstWait - 1;
       if (prev >= base) { const since = el - start[prev]; if (since < 2) qx += (len(order[prev]) + Q_GAP) * (1 - smooth(since / 2)); }
       if (qx > 128) return;
-      A.push({ it, x: qx + len(it) / 2, y: PIER, dir: -1, z: deck.rows + 1, rider: it.k === "bike" ? riderOf(j) : null, driver: it.k !== "bike" });
+      A.push({ it, x: qx + len(it) / 2, y: PIER, dir: -1, lane: 0, z: deck.rows + 1, rider: it.k === "bike" ? riderOf(j) : null, driver: it.k !== "bike" });
     });
     deck.people.slice(0, Math.round(v.k * deck.people.length)).forEach(p => A.push({ P: p.P, x: p.x, y: p.y, dir: p.dir, z: 80 }));
     footStream(A, t, true, ago => v.left + ago > 60);
@@ -1291,10 +1291,10 @@ function cargoActors(deck, v, el, t, unloadMin) {
     order.forEach((it, j) => {
       if (j < base) return;
       const slot = it.x + len(it) / 2, u = (el - start[j]) / DRIVE[it.k];
-      if (v.k < .1 || u <= 0) { A.push({ it, x: slot, y: it.y, dir: 1, z: it.z, driver: it.k === "auto" }); return; }
+      if (v.k < .1 || u <= 0) { A.push({ it, x: slot, y: it.y, dir: 1, z: it.z, lane: 1, driver: it.k === "auto" }); return; }
       if (u >= 1) return;                                                        // gone up the jetty
       const xe = TIP + 64, p = driveFrac(u), cx = slot + (xe - slot) * p, turn = smooth(p / .28);
-      A.push({ it, x: cx, y: it.y + (groundAt(cx) - it.y) * turn, dir: 1, rot: (xe - slot) * p / WHEEL_R[it.k], z: turn < .5 ? it.z : deck.rows + .5,
+      A.push({ it, x: cx, y: it.y + (groundAt(cx) - it.y) * turn, dir: 1, lane: 1 - turn, rot: (xe - slot) * p / WHEEL_R[it.k], z: turn < .5 ? it.z : deck.rows + .5,
                rider: it.k === "bike" ? riderOf(j) : null, driver: it.k !== "bike" });
     });
     deck.people.slice(0, Math.round((1 - v.k) * deck.people.length)).forEach(p => A.push({ P: p.P, x: p.x, y: p.y, dir: p.dir, z: 80 }));
@@ -1386,6 +1386,147 @@ function drawCrowd(g, w, h, Q, t, ST) {
   });
 }
 
+// ═══ Vehicle ferry seen from above (from the wheelhouse), used while loading and unloading ═══
+// Same actors as the side view (cargoActors): x is the position along the ferry in ferry units, `lane` how far
+// a vehicle has turned from the centre line into its parking lane. Bow ramp between two winch platforms.
+function carTop(g, it, L, W, moving) {
+  const suv = it.model === "suv", sedan = it.model === "sedan", c = it.c;
+  g.fillStyle = "rgba(0,0,0,.28)"; g.beginPath(); g.roundRect(-L / 2 + 1, -W / 2 + 1.5, L, W, W * .28); g.fill();
+  const body = new Path2D(); body.roundRect(-L / 2, -W / 2, L, W, [W * .38, W * .45, W * .45, W * .38]);
+  g.fillStyle = c; g.fill(body);
+  const gl = g.createLinearGradient(0, -W / 2, 0, W / 2); gl.addColorStop(0, "rgba(255,255,255,.28)"); gl.addColorStop(.5, "rgba(255,255,255,0)"); gl.addColorStop(1, "rgba(0,0,0,.2)");
+  g.fillStyle = gl; g.fill(body);
+  const glass = "#1f2c38";
+  g.fillStyle = glass;                                                             // windscreen (front = +x), rear glass, side windows
+  g.beginPath(); g.moveTo(L * .17, -W * .4); g.lineTo(L * .28, -W * .33); g.lineTo(L * .28, W * .33); g.lineTo(L * .17, W * .4); g.closePath(); g.fill();
+  const rearX = sedan ? -L * .3 : -L * .38;
+  g.beginPath(); g.moveTo(rearX, -W * .36); g.lineTo(rearX - L * .06, -W * .3); g.lineTo(rearX - L * .06, W * .3); g.lineTo(rearX, W * .36); g.closePath(); g.fill();
+  g.fillRect(rearX, -W * .48, L * .17 - rearX, W * .07); g.fillRect(rearX, W * .41, L * .17 - rearX, W * .07);
+  g.fillStyle = shade(c, 1.06); g.beginPath(); g.roundRect(rearX, -W * .4, L * .17 - rearX, W * .8, W * .1); g.fill();   // roof
+  if (suv) { g.fillStyle = "#2a2d31"; g.fillRect(rearX + 1, -W * .36, L * .17 - rearX - 2, 1.1); g.fillRect(rearX + 1, W * .36 - 1.1, L * .17 - rearX - 2, 1.1);
+    g.fillStyle = "#151b22"; g.fillRect(-L * .04, -W * .17, L * .13, W * .34); }                     // roof rails, sunroof
+  g.strokeStyle = "rgba(0,0,0,.25)"; g.lineWidth = .7; g.beginPath(); g.moveTo(L * .3, -W * .3); g.quadraticCurveTo(L * .4, 0, L * .3, W * .3); g.stroke();   // bonnet line
+  g.fillStyle = "#1c1f23"; g.fillRect(L * .16, -W * .58, L * .05, W * .12); g.fillRect(L * .16, W * .46, L * .05, W * .12);   // mirrors
+  g.fillStyle = "#fff6cf"; g.fillRect(L * .45, -W * .42, L * .04, W * .2); g.fillRect(L * .45, W * .22, L * .04, W * .2);     // head lamps
+  g.fillStyle = "#c81e1e"; g.fillRect(-L * .5, -W * .42, L * .03, W * .18); g.fillRect(-L * .5, W * .24, L * .03, W * .18);
+  if (moving) { g.fillStyle = "#3a2a20"; g.beginPath(); g.arc(L * .1, -W * .16, W * .13, 0, 6.283); g.fill(); }              // driver's head through the glass
+}
+function autoTop(g, L, W) {
+  g.fillStyle = "rgba(0,0,0,.28)"; g.beginPath(); g.roundRect(-L / 2 + 1, -W / 2 + 1.5, L, W, W * .3); g.fill();
+  g.fillStyle = "#17181b"; g.beginPath(); g.moveTo(-L / 2, -W / 2 + 2); g.lineTo(L * .2, -W / 2); g.quadraticCurveTo(L / 2, -W * .2, L / 2, 0);
+  g.quadraticCurveTo(L / 2, W * .2, L * .2, W / 2); g.lineTo(-L / 2, W / 2 - 2); g.closePath(); g.fill();
+  g.fillStyle = "#f2c230"; g.beginPath(); g.roundRect(-L * .5, -W * .44, L * .78, W * .88, W * .2); g.fill();             // yellow roof
+  g.strokeStyle = "rgba(0,0,0,.25)"; g.lineWidth = .7; for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(-L * .5 + i * L * .19, -W * .42); g.lineTo(-L * .5 + i * L * .19, W * .42); g.stroke(); }
+  g.fillStyle = "rgba(170,200,220,.7)"; g.fillRect(L * .28, -W * .3, L * .07, W * .6);
+  g.fillStyle = "#fff6cf"; g.beginPath(); g.arc(L * .47, 0, W * .07, 0, 6.283); g.fill();
+}
+function bikeTop(g, it, L, rider) {
+  const scooter = !["commuter", "sport", "naked"].includes(it.model), W = L * .26;
+  g.fillStyle = "rgba(0,0,0,.25)"; g.beginPath(); g.ellipse(1, 1.2, L * .5, W * .55, 0, 0, 6.283); g.fill();
+  g.fillStyle = "#151617"; g.beginPath(); g.roundRect(L * .32, -W * .16, L * .18, W * .32, 2); g.fill(); g.beginPath(); g.roundRect(-L * .5, -W * .17, L * .18, W * .34, 2); g.fill();   // tyres
+  g.fillStyle = it.c; g.beginPath(); g.roundRect(-L * .36, -W * (scooter ? .42 : .3), L * (scooter ? .78 : .7), W * (scooter ? .84 : .6), W * .3); g.fill();
+  g.fillStyle = "#141516"; g.beginPath(); g.roundRect(-L * .3, -W * .28, L * .36, W * .56, W * .25); g.fill();                    // seat
+  g.strokeStyle = "#1c1f23"; g.lineWidth = Math.max(1, W * .14); g.lineCap = "round"; g.beginPath(); g.moveTo(L * .3, -W * .9); g.lineTo(L * .3, W * .9); g.stroke();   // handlebar
+  g.fillStyle = "#2a2c30"; g.beginPath(); g.arc(L * .27, -W * 1.05, W * .2, 0, 6.283); g.arc(L * .27, W * 1.05, W * .2, 0, 6.283); g.fill();   // mirrors
+  g.fillStyle = "#fff6cf"; g.beginPath(); g.arc(L * .42, 0, W * .16, 0, 6.283); g.fill();
+  if (rider) { personTop(g, 0, 0, rider, 0, false, W * 2.3, true); }
+}
+// a person seen from above: shoulders, arms, head (or helmet); feet show while walking
+function personTop(g, x, y, P, ph, walking, D, helmet) {
+  g.save(); g.translate(x, y);
+  const sw = walking ? Math.sin(ph) : 0;
+  g.fillStyle = "rgba(0,0,0,.22)"; g.beginPath(); g.ellipse(1.2, 1.2, D * .55, D * .32, 0, 0, 6.283); g.fill();
+  if (walking) { g.fillStyle = P.shoe || "#222"; g.beginPath(); g.ellipse(D * .32 * sw, -D * .14, D * .14, D * .08, 0, 0, 6.283); g.ellipse(-D * .32 * sw, D * .14, D * .14, D * .08, 0, 0, 6.283); g.fill(); }
+  const skirt = P.type === "saree" ? P.skirt : null;
+  if (skirt) { g.fillStyle = skirt; g.beginPath(); g.ellipse(0, 0, D * .3, D * .36, 0, 0, 6.283); g.fill(); }
+  g.fillStyle = shade(P.top, .85); g.beginPath(); g.ellipse(-D * .22 * sw, -D * .36, D * .14, D * .1, 0, 0, 6.283); g.ellipse(D * .22 * sw, D * .36, D * .14, D * .1, 0, 0, 6.283); g.fill();   // arms
+  g.fillStyle = P.top; g.beginPath(); g.ellipse(0, 0, D * .2, D * .36, 0, 0, 6.283); g.fill();                     // shoulders
+  if (P.bag === "backpack" || P.bag === "schoolbag") { g.fillStyle = P.bagC; g.beginPath(); g.roundRect(-D * .36, -D * .2, D * .16, D * .4, 1.5); g.fill(); }
+  if (P.scarf) { g.fillStyle = P.scarf; g.fillRect(-D * .05, -D * .34, D * .1, D * .68); }
+  if (skirt) { g.fillStyle = skirt; g.beginPath(); g.ellipse(-D * .06, D * .1, D * .12, D * .22, .4, 0, 6.283); g.fill(); }   // pallu
+  g.fillStyle = helmet ? (P.helmet || "#1f2937") : P.hairC; g.beginPath(); g.arc(D * .03, 0, D * .19, 0, 6.283); g.fill();     // head from above
+  if (!helmet && P.hair === "bun") { g.beginPath(); g.arc(-D * .16, 0, D * .08, 0, 6.283); g.fill(); }
+  if (!helmet) { g.fillStyle = P.skin; g.beginPath(); g.ellipse(D * .16, 0, D * .05, D * .1, 0, 0, 6.283); g.fill(); }        // forehead/nose
+  g.restore();
+}
+function drawTopView(g, w, h, v, deck, actors, t, night, name) {
+  const unload = v.kind === "unload";
+  g.save();
+  if (unload) { g.translate(w, 0); g.scale(-1, 1); }                              // jetty on the right while unloading, as in the side view
+  const xb = w * .42, k = (w - xb) / 57, X = u => xb + (54 - u) * k;             // ferry units → screen x (bow at unit 54)
+  const y0 = h * .2, y1 = h * .8, beam = y1 - y0, cy = (y0 + y1) / 2, qx = X(TIP) + 3;   // between the caption pills
+  // water
+  const sg = g.createLinearGradient(0, 0, 0, h); sg.addColorStop(0, night ? "#0d2733" : "#4f9a98"); sg.addColorStop(1, night ? "#081c26" : "#2f7c7f");
+  g.fillStyle = sg; g.fillRect(0, 0, w, h);
+  const rr = vrand(11); g.lineWidth = 1;
+  for (let i = 0; i < 40; i++) { const yy = rr() * h, xx = ((rr() * w + t * (4 + rr() * 6)) % w), a = .1 + .15 * Math.sin(t * 1.3 + i);
+    g.strokeStyle = `rgba(255,255,255,${night ? a * .4 : a})`; g.beginPath(); g.moveTo(xx, yy); g.lineTo(xx + 8, yy); g.stroke(); }
+  // jetty (concrete), its edge, tyre fenders, bollards
+  g.fillStyle = night ? "#55524c" : "#c4beb2"; g.fillRect(0, 0, qx, h);
+  g.fillStyle = "rgba(0,0,0,.06)"; for (let i = 0; i < 6; i++) g.fillRect(0, i * h / 6, qx, 1);
+  g.fillStyle = "#d9b53a"; g.fillRect(qx - 5, 0, 2.2, h);
+  g.fillStyle = night ? "#3e3b37" : "#8f8a80"; g.fillRect(qx - 2, 0, 3, h);
+  for (let yy = 6; yy < h; yy += 15) { if (Math.abs(yy - cy) < beam * .2) continue;
+    g.fillStyle = "#111"; g.beginPath(); g.ellipse(qx + 1.5, yy, 2.4, 5.5, 0, 0, 6.283); g.fill(); g.fillStyle = "#3a3a3a"; g.beginPath(); g.ellipse(qx + 1.5, yy, 1, 3, 0, 0, 6.283); g.fill(); }
+  [y0 + 4, y1 - 4].forEach(by => { g.fillStyle = "#1d1f22"; g.beginPath(); g.arc(qx - 10, by, 3.6, 0, 6.283); g.fill(); g.fillStyle = "#3a3d42"; g.beginPath(); g.arc(qx - 10, by, 2, 0, 6.283); g.fill(); });
+  // the ferry: rusty steel deck, light bulwarks, plate seams, hatch covers, coiled ropes
+  const hullL = X(54);
+  g.fillStyle = "#9aa0a5"; g.beginPath(); g.roundRect(hullL, y0 - 4, w - hullL + 20, beam + 8, 4); g.fill();
+  const dg = g.createLinearGradient(0, y0, 0, y1); dg.addColorStop(0, night ? "#2e2724" : "#5a4a44"); dg.addColorStop(.5, night ? "#36302d" : "#4a4441"); dg.addColorStop(1, night ? "#2e2724" : "#5c4640");
+  g.fillStyle = dg; g.fillRect(hullL + 2, y0, w - hullL, beam);
+  g.fillStyle = "rgba(140,60,40,.28)"; const rz = vrand(5); for (let i = 0; i < 14; i++) { g.beginPath(); g.ellipse(hullL + rz() * (w - hullL), y0 + rz() * beam, 6 + rz() * 14, 3 + rz() * 6, rz(), 0, 6.283); g.fill(); }
+  g.strokeStyle = "rgba(0,0,0,.22)"; g.lineWidth = .7;
+  for (let u = 50; u > -6; u -= 6) { g.beginPath(); g.moveTo(X(u), y0); g.lineTo(X(u), y1); g.stroke(); }
+  [y0 + beam * .33, y0 + beam * .66].forEach(yy => { g.beginPath(); g.moveTo(hullL, yy); g.lineTo(w, yy); g.stroke(); });
+  g.fillStyle = "#cdd1d4"; g.fillRect(hullL, y0 - 4, w - hullL, 3.4); g.fillRect(hullL, y1 + .6, w - hullL, 3.4);   // bulwarks
+  [[X(8), y0 + 7], [X(28), y1 - 7]].forEach(([hx, hy]) => { g.strokeStyle = "#6b4a3a"; g.lineWidth = 1.2; g.beginPath(); g.arc(hx, hy, 4.4, 0, 6.283); g.stroke(); g.beginPath(); g.arc(hx, hy, 2, 0, 6.283); g.stroke(); });
+  g.strokeStyle = "#c8a24a"; g.lineWidth = 1.4; [[X(2), y1 - 6], [X(36), y0 + 6]].forEach(([rx, ry]) => { for (let r = 1.5; r < 5.5; r += 1.3) { g.beginPath(); g.arc(rx, ry, r, 0, 6.283); g.stroke(); } });
+  // bow ramp, between the two winch platforms, lying on the jetty
+  const pW = beam * .26, rampY0 = y0 + pW + 2, rampY1 = y1 - pW - 2;
+  g.fillStyle = "#5d5855"; g.fillRect(qx - 8, rampY0, hullL - qx + 10, rampY1 - rampY0);
+  g.fillStyle = "rgba(255,255,255,.08)"; for (let rx = qx - 6; rx < hullL; rx += 4) for (let ry = rampY0 + 2; ry < rampY1 - 1; ry += 4) g.fillRect(rx + ((ry / 4) % 2) * 2, ry, 1.6, .9);
+  g.strokeStyle = "rgba(0,0,0,.35)"; g.lineWidth = 1; g.strokeRect(qx - 8, rampY0, hullL - qx + 10, rampY1 - rampY0);
+  g.strokeStyle = "#2b2b2b"; g.lineWidth = .8; [rampY0 + 1, rampY1 - 1].forEach(ry => { g.beginPath(); g.moveTo(hullL + 6, ry); g.lineTo(qx - 4, ry); g.stroke(); });   // lifting wires
+  // winch platforms: grey house, blue winch, green canopy on blue posts, ladder at the back, red light post
+  [[y0, 1], [y1 - pW, -1]].forEach(([py, sgn]) => {
+    const px0 = X(54) + 1, px1 = X(41);
+    g.fillStyle = "#c9ccc8"; g.fillRect(px0, py, px1 - px0, pW);
+    g.fillStyle = "#2f5fa8"; g.beginPath(); g.roundRect(px0 + (px1 - px0) * .18, py + pW * .25, (px1 - px0) * .5, pW * .5, 3); g.fill();
+    g.fillStyle = "#c62828"; g.beginPath(); g.arc(px0 + (px1 - px0) * .2, py + pW * .5, pW * .16, 0, 6.283); g.fill();
+    g.fillStyle = "rgba(47,143,107,.86)"; g.fillRect(px0 + 2, py + 2, px1 - px0 - 6, pW - 4);
+    g.strokeStyle = "rgba(255,255,255,.35)"; g.lineWidth = .8; for (let i = 1; i < 4; i++) { const lx = px0 + 2 + i * (px1 - px0 - 6) / 4; g.beginPath(); g.moveTo(lx, py + 2); g.lineTo(lx, py + pW - 2); g.stroke(); }
+    g.strokeStyle = "#2d62b0"; g.lineWidth = 1.4; g.strokeRect(px0 + .7, py + .7, px1 - px0 - 1.4, pW - 1.4);
+    g.fillStyle = "#4b5563"; g.fillRect(px1, py + (sgn > 0 ? pW * .55 : pW * .1), 7, pW * .35);
+    g.strokeStyle = "#9ca3af"; g.lineWidth = .7; for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(px1 + 1 + i * 1.7, py + (sgn > 0 ? pW * .55 : pW * .1)); g.lineTo(px1 + 1 + i * 1.7, py + (sgn > 0 ? pW * .9 : pW * .45)); g.stroke(); }
+    g.fillStyle = "#e11d48"; g.beginPath(); g.arc(px0 + 3, py + (sgn > 0 ? pW - 3 : 3), 2.2, 0, 6.283); g.fill();
+    if (night) { g.fillStyle = "rgba(255,80,80,.25)"; g.beginPath(); g.arc(px0 + 3, py + (sgn > 0 ? pW - 3 : 3), 9, 0, 6.283); g.fill(); }
+  });
+  // parking lanes behind the platforms (far rows at the top), a walkway along the far side, clear of the captions
+  const laneTop = y0 + beam * .2, laneBot = y1 - beam * .04, R = Math.max(1, deck.rows), laneY = z => laneTop + (z + .5) * (laneBot - laneTop) / R;
+  const walkY = y0 + beam * .09, rampWalkY = rampY0 + 5, pedY = u => u > 40 ? rampWalkY : u < 33 ? walkY : rampWalkY + (walkY - rampWalkY) * smooth((40 - u) / 7);
+  const list = actors.map(a => {
+    const sx = X(a.x);
+    if (a.P) { const yy = (a.walk ? pedY(a.x) : walkY + ((a.x * 7) % 5) - 2) + ((a.P.h * 37) % 4 - 2); return { a, sx, sy: yy, z: 1000 + yy }; }
+    const tgt = laneY(a.it.z), lane = a.lane === undefined ? 1 : a.lane, sy = cy + (tgt - cy) * lane;
+    return { a, sx, sy, z: a.it.z * 10 + (a.rot ? 5 : 0), ang: (a.dir < 0 ? 0 : Math.PI) + (a.rot ? Math.sin(Math.PI * lane) * Math.sign(tgt - cy) * .35 * (a.dir < 0 ? 1 : -1) * (lane < 1 && lane > 0 ? 1 : 0) : 0) };
+  }).sort((p, q) => p.z - q.z);
+  list.forEach(({ a, sx, sy, ang }) => {
+    if (a.alpha !== undefined && a.alpha <= 0) return;
+    g.globalAlpha = a.alpha === undefined ? 1 : a.alpha;
+    if (a.P) { const D = PH * a.P.h * k * .34; personTop(g, sx, sy, a.P, reduced ? 0 : (a.ph || 0), !!a.walk, D * 1.25); g.globalAlpha = 1; return; }
+    const L = ITEM_W[a.it.k] * k;
+    g.save(); g.translate(sx, sy); g.rotate(ang);
+    if (a.it.k === "car") carTop(g, a.it, L, L * .43, !!a.rot || !!a.driver);
+    else if (a.it.k === "auto") autoTop(g, L, L * .55);
+    else bikeTop(g, a.it, L, a.rider && a.rider !== true ? a.rider : null);
+    g.restore(); g.globalAlpha = 1;
+  });
+  if (night) { g.fillStyle = "rgba(4,12,28,.38)"; g.fillRect(0, 0, w, h);
+    [[X(30), cy], [X(10), cy]].forEach(([lx, ly]) => { const lg = g.createRadialGradient(lx, ly, 0, lx, ly, beam * .6); lg.addColorStop(0, "rgba(255,220,150,.22)"); lg.addColorStop(1, "rgba(255,220,150,0)"); g.fillStyle = lg; g.fillRect(lx - beam, ly - beam, beam * 2, beam * 2); }); }
+  g.restore();
+  // (the jetty's name is in the caption above, so no board here: it would cover the ramp)
+}
+
 // Ro-ro vehicle ferry like the harbour boats: cabin block astern, open car deck forward, bow ramp with black lifting arms.
 // Local units, facing right, waterline y = 0, deck y = -10. ramp: 0 = raised, 1 = lowered onto the jetty.
 function drawFerry(g, o) {
@@ -1422,6 +1563,19 @@ function drawFerry(g, o) {
   g.fillStyle = "#f2c230"; g.fillRect(-20.5, -60, 1.8, 16); g.fillRect(-25, -55, 11, 1.1); g.fillRect(-23.5, -50.5, 8, 1);   // yellow mast
   g.fillStyle = "#ff9933"; g.fillRect(-18.5, -60, 5, 1.1); g.fillStyle = "#ffffff"; g.fillRect(-18.5, -58.9, 5, 1.1); g.fillStyle = "#138808"; g.fillRect(-18.5, -57.8, 5, 1.1);
   g.fillStyle = "#e8eaec"; g.fillRect(-56.5, -28, 2, 5); g.fillStyle = "#e5512f"; g.beginPath(); g.arc(-7, -30, 1.6, 0, 6.283); g.fill();   // life ring
+  // winch platform at the bow (one each side; the near one shows): grey house, blue winch, green canopy, ladder, red light post
+  g.fillStyle = night ? "#a8adaa" : "#c9ccc8"; g.fillRect(37.5, -20, 11, 9.4);
+  g.strokeStyle = "rgba(0,0,0,.25)"; g.lineWidth = .3; g.strokeRect(37.5, -20, 11, 9.4);
+  g.fillStyle = "#c62828"; g.fillRect(39.5, -16, 2.2, 3);                              // fire extinguisher box
+  g.fillStyle = "#2f5fa8"; g.beginPath(); g.roundRect(39.4, -24.4, 6.4, 4.4, 1.2); g.fill();   // winch
+  g.fillStyle = "#c62828"; g.beginPath(); g.arc(40.2, -22.2, 1.6, 0, 6.283); g.fill();
+  g.fillStyle = "#4b5563"; g.fillRect(43.6, -25.4, 2.6, 5.4);
+  g.strokeStyle = "#2d62b0"; g.lineWidth = .55; g.beginPath(); g.moveTo(37.5, -24); g.lineTo(48.5, -24); g.moveTo(37.5, -20); g.lineTo(37.5, -29); g.moveTo(48, -20); g.lineTo(48, -29); g.stroke();
+  g.fillStyle = "#2f8f6b"; g.beginPath(); g.moveTo(36.6, -29.6); g.lineTo(49.4, -29.6); g.lineTo(48.6, -28.4); g.lineTo(37.2, -28.4); g.fill();   // canopy
+  g.strokeStyle = "#8c96a0"; g.lineWidth = .45; for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(36.4 + i * .3, -10.5 - i * 2.2); g.lineTo(37.6 + i * .3, -10.5 - i * 2.2); g.stroke(); }   // ladder
+  g.beginPath(); g.moveTo(36.3, -10.4); g.lineTo(37.5, -20); g.stroke();
+  g.strokeStyle = "#d32f2f"; g.lineWidth = .8; g.beginPath(); g.moveTo(49.6, -20); g.lineTo(49.6, -33); g.stroke();   // red light post
+  g.fillStyle = "#f5f5f4"; g.fillRect(48.9, -34.6, 1.4, 1.8);
   // bow: lifting arms (notched black frames), blue rail, the ramp
   g.fillStyle = "#16181b";
   g.beginPath(); g.moveTo(43, -10); g.lineTo(49, -10); g.lineTo(46, -38); g.lineTo(43.5, -38); g.lineTo(44.4, -33); g.lineTo(42.6, -31); g.lineTo(43.6, -26);
@@ -1570,10 +1724,14 @@ function drawVoyage(fig, t) {
   // which shot: the jetty it is at, or open sea
   const side = (v.kind === "arrive" || v.kind === "unload") ? "R" : "L";
   const mode = v.kind === "sail" ? "sea" : pax ? "Q" : side;                   // passenger boats berth alongside the quay
-  const jname = side === "R" ? v.b : v.a, shot = mode + jname, quay = mode === "Q";
+  const topv = !pax && (v.kind === "load" || v.kind === "unload");               // vehicle ferry at the jetty: seen from above
+  const jname = side === "R" ? v.b : v.a, shot = (topv ? "T" : mode) + jname, quay = mode === "Q";
   if (st.shot !== shot) { if (st.shot && !reduced) cv2.animate([{ opacity: .15 }, { opacity: 1 }], { duration: 650, easing: "ease-out" }); st.shot = shot; st.parts = []; st.shotT = t; }
-  const bg = st.bgs[shot] || (st.bgs[shot] = buildVoyageBg(st, mode, jname));
   const g = cv2.getContext("2d"); g.setTransform(st.dpr, 0, 0, st.dpr, 0, 0);
+  const deck = pax ? null : deckFor(v.a || boat.trips[0].a, v.b || boat.trips[0].b), others = [];
+  if (topv) drawTopView(g, w, h, v, deck, cargoActors(deck, v, reduced ? 0 : anim - st.shotT, anim, boat.times[2]), anim, night, jname);
+  else {
+  const bg = st.bgs[shot] || (st.bgs[shot] = buildVoyageBg(st, mode, jname));
   g.drawImage(bg, 0, 0, w, h);
   const run = mode === "sea" ? anim * 26 : 0;                                     // at sea the world slides past
   if (mode === "sea") hills(g, w, hz, h, night, run * .25 + 1);
@@ -1591,7 +1749,6 @@ function drawVoyage(fig, t) {
   }
 
   const s = w * (mode === "L" || mode === "R" ? .0062 : FS), pw = w * JW, deckY = h * .6; let wl = deckY + 10 * s + 1;
-  const deck = pax ? null : deckFor(v.a || boat.trips[0].a, v.b || boat.trips[0].b);
   const bow = pax ? 46 : 57, xL = pw + bow * s + 4, xR = w - pw - bow * s - 4;                           // docked, bow ramp over the jetty
   let x = xL, face = -1, sp = 0, ramp = 0, load = 0;
   if (v.kind === "load") {
@@ -1632,7 +1789,6 @@ function drawVoyage(fig, t) {
   if (sp > .15 && !reduced) st.parts.push({ x: x - 56 * S * Math.sign(face), y: WL + (Math.random() * 3 - 1) * S, r: 1 + Math.random() * 1.5, life: 1, vx: -.25 * Math.sign(face) - (mode === "sea" ? 1.6 : 0) });
   st.parts = st.parts.filter(q => (q.life -= .012) > 0);
   st.parts.forEach(q => { q.x += q.vx; q.r += .04; g.fillStyle = `rgba(255,255,255,${q.life * .55})`; g.beginPath(); g.ellipse(q.x, q.y, q.r * 1.8, q.r * .6, 0, 0, 6.283); g.fill(); });
-  const others = [];
   if (mode === "sea") for (const b of BOATS) if (b !== boat && b.pair === boat.pair) {
     const o = vesselState(b.trips, b.times, nowS);
     if (o.kind === "sail" && o.a === v.b) {                                        // coming the other way: you meet mid-channel
@@ -1663,6 +1819,7 @@ function drawVoyage(fig, t) {
     g.fillStyle = "#ffd166"; g.beginPath(); g.arc(px, y, 4.5, 0, 6.283); g.fill();
   }
 
+  }
   // captions
   const mins = d => Math.max(1, Math.ceil(d));
   const inT = m => m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;

@@ -173,11 +173,19 @@
   .bar2 { height: 4px; border-radius: 4px; background: var(--tag); overflow: hidden; } .bar2 i { display: block; height: 100%; background: var(--sea); }
   .boats { display: grid; gap: 10px; }
   /* the bar sits below the phone's status bar / notch, so the back button is always reachable */
-  .appbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; background: var(--sea); color: var(--on-sea);
+  .appbar { position: relative; z-index: 20; display: flex; align-items: center; gap: 10px; background: var(--sea); color: var(--on-sea);
             padding: calc(10px + env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 10px max(8px, env(safe-area-inset-left, 0px));
             box-shadow: 0 2px 10px rgba(0, 0, 0, .18); }
   .appbar button { touch-action: manipulation; -webkit-tap-highlight-color: rgba(255, 255, 255, .2); flex: none; }
   .appbar button:active { background: rgba(255, 255, 255, .28); }
+  /* floating Back button, bottom left: never under the phone's status bar or an app's top toolbar */
+  .backfab { position: fixed; z-index: 40; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+             display: inline-flex; align-items: center; gap: 6px; min-height: 48px; padding: 0 20px 0 14px; border-radius: 999px; border: 0;
+             background: var(--sea); color: var(--on-sea); font: 600 16px var(--body); box-shadow: 0 6px 20px rgba(0, 0, 0, .3);
+             cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .backfab svg { width: 20px; height: 20px; }
+  .backfab:active { transform: scale(.96); }
+  #live .page { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
   .appbar button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .14); color: inherit; display: grid; place-items: center; cursor: pointer; }
   .appbar svg { width: 22px; height: 22px; }
   .appbar b { display: block; font: 700 18px var(--display); } .appbar small { display: block; font-size: 12.5px; opacity: .85; }
@@ -260,6 +268,7 @@
     <button type="button" id="back" aria-label="Back to search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
     <div><b id="lv-name"></b><small id="lv-sub"></small></div>
   </div>
+  <button type="button" class="backfab" id="back2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
   <div class="page">
     <div class="status" id="lv-status" aria-live="polite"></div>
     <div id="lv-scene"></div>
@@ -533,11 +542,13 @@ document.addEventListener("click", e => {
   const t = e.target.closest("[data-boat]"); if (t && !t.closest("#live")) openLive(t.dataset.boat, t.dataset.trip);
 });
 document.addEventListener("keydown", e => { const t = e.target.closest && e.target.closest(".next[data-boat]"); if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openLive(t.dataset.boat, t.dataset.trip); } });
-document.getElementById("back").addEventListener("click", () => {
+const goBack = () => {
   // opened from a shared link: there is nothing of ours to go back to, so just close the live view
   if (openedHere && history.length > 1) history.back();
   else { history.replaceState(null, "", location.pathname + location.search); route(); }
-});
+};
+document.getElementById("back").addEventListener("click", goBack);
+document.getElementById("back2").addEventListener("click", goBack);
 addEventListener("hashchange", route);
 document.getElementById("out").addEventListener("toggle", e => {
   const d = e.target; if (!d.dataset || !d.dataset.key) return;

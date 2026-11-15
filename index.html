@@ -297,7 +297,7 @@ const ROUTES = [
   { from: "Chatham", to: "Bambooflat", route: "Vehicle ferry", pax: [],
     vf: [...Array.from({ length: 32 }, (_, i) => 330 + i * 30), 1300] },
   { from: "Bambooflat", to: "Chatham", route: "Vehicle ferry", pax: [],
-    vf: [300, ...Array.from({ length: 31 }, (_, i) => 360 + i * 30)] },   // 5:00 AM, then 6:00 AM–9:00 PM every 30 min (no 5:30)
+    vf: Array.from({ length: 33 }, (_, i) => 300 + i * 30) },   // 5:00 AM–9:00 PM every 30 min
 ];
 const JETTIES = ["Bambooflat", "Phoenix Bay", "Hopetown", "Chatham", "Dandus Point"];
 
@@ -695,16 +695,16 @@ if (reduced) document.getElementById("hint").hidden = true;
 const VTIMES = { "Chatham|Bambooflat": [0, 14, 5], "Bambooflat|Chatham": [0, 14, 5], "Chatham|Dandus Point": [0, 10, 5] }, VTIME_DEFAULT = [5, 35, 8];
 // The vehicle ferries on each crossing (key = the two jetties in A–Z order).
 // MV MUS and MV PILOBHABI swap routes every day: on 15 Nov 2026 MUS ran Phoenix Bay ⇄ Bambooflat and PILOBHABI
-// Chatham ⇄ Bambooflat; the next day the other way round, and so on. MV NORTH BAY always runs Chatham ⇄ Bambooflat:
-// it spends the night at Bambooflat and makes the first trip (5:00 AM); the other boat spends the night at Chatham
-// and makes the 5:30 AM from Chatham.
+// Chatham ⇄ Bambooflat; the next day the other way round, and so on. MV NORTH BAY always runs Chatham ⇄ Bambooflat.
+// Both Chatham-route boats spend the night at Bambooflat: the MUS/PILOBHABI boat makes the first trip (5:00 AM from
+// Bambooflat, then 5:30 AM from Chatham); MV NORTH BAY starts at 5:30 AM from Bambooflat. From 5:30 on, two ferries run.
 const istDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);   // YYYY-MM-DD
 function vnamesFor(day) {
   const [y, m, dd] = day.split("-").map(Number), n = Math.round((Date.UTC(y, m - 1, dd) - Date.UTC(2026, 10, 15)) / 864e5);
   const musOnPB = ((n % 2) + 2) % 2 === 0;
-  return { "Bambooflat|Chatham": ["MV NORTH BAY", musOnPB ? "MV PILOBHABI" : "MV MUS"], "Bambooflat|Phoenix Bay": [musOnPB ? "MV MUS" : "MV PILOBHABI"] };
+  return { "Bambooflat|Chatham": [musOnPB ? "MV PILOBHABI" : "MV MUS", "MV NORTH BAY"], "Bambooflat|Phoenix Bay": [musOnPB ? "MV MUS" : "MV PILOBHABI"] };
 }
-const VSTART = { "Bambooflat|Chatham": ["Bambooflat", "Chatham"] };   // where each named boat spends the night
+const VSTART = { "Bambooflat|Chatham": ["Bambooflat", "Bambooflat"] };   // where each named boat spends the night (first listed leaves first)
 let VNAMES = vnamesFor(istDay()), builtDay = "";
 // Passenger boats (blue hull, white cabins): [casting off, at sea, getting off] — estimates, change here
 const PTIMES = { "Bambooflat|Phoenix Bay": [0, 20, 3], "Hopetown|Phoenix Bay": [0, 15, 3], "Bambooflat|Hopetown": [0, 10, 3],

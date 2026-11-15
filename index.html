@@ -297,7 +297,7 @@ const ROUTES = [
   { from: "Chatham", to: "Bambooflat", route: "Vehicle ferry", pax: [],
     vf: [...Array.from({ length: 32 }, (_, i) => 330 + i * 30), 1300] },
   { from: "Bambooflat", to: "Chatham", route: "Vehicle ferry", pax: [],
-    vf: Array.from({ length: 33 }, (_, i) => 300 + i * 30) },   // 5:00 AM–9:00 PM
+    vf: [300, ...Array.from({ length: 31 }, (_, i) => 360 + i * 30)] },   // 5:00 AM, then 6:00 AM–9:00 PM every 30 min (no 5:30)
 ];
 const JETTIES = ["Bambooflat", "Phoenix Bay", "Hopetown", "Chatham", "Dandus Point"];
 
@@ -417,6 +417,7 @@ function boatsHTML(sec) {
 }
 
 function render(p) {
+  if (istDay() !== builtDay) buildAll();                                        // a new day: today's boats on today's routes
   const sec = nowSec(p), now = Math.floor(sec / 60);
   lastMinute = now;
   document.getElementById("clock").innerHTML = `${p.weekday} ${p.day} ${p.month} · <b>${fmt(now)}</b> Port Blair time`;
@@ -692,9 +693,19 @@ if (reduced) document.getElementById("hint").hidden = true;
 // ── Vehicle ferry scene, driven by the real timetable ──
 // Times from DSS staff, in minutes: [casting off after the departure time, at sea, unloading]
 const VTIMES = { "Chatham|Bambooflat": [0, 14, 5], "Bambooflat|Chatham": [0, 14, 5], "Chatham|Dandus Point": [0, 10, 5] }, VTIME_DEFAULT = [5, 35, 8];
-// The boats on each crossing (key = the two jetties in A–Z order). With two boats, the first name is the one
-// that starts the day at Bambooflat (5:00 AM); the other leaves Chatham on the hour.
-const VNAMES = { "Bambooflat|Chatham": ["MV MUS", "MV NORTH BAY"], "Bambooflat|Phoenix Bay": ["MV PILOBHABI"] };
+// The vehicle ferries on each crossing (key = the two jetties in A–Z order).
+// MV MUS and MV PILOBHABI swap routes every day: on 15 Nov 2026 MUS ran Phoenix Bay ⇄ Bambooflat and PILOBHABI
+// Chatham ⇄ Bambooflat; the next day the other way round, and so on. MV NORTH BAY always runs Chatham ⇄ Bambooflat:
+// it spends the night at Bambooflat and makes the first trip (5:00 AM); the other boat spends the night at Chatham
+// and makes the 5:30 AM from Chatham.
+const istDay = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);   // YYYY-MM-DD
+function vnamesFor(day) {
+  const [y, m, dd] = day.split("-").map(Number), n = Math.round((Date.UTC(y, m - 1, dd) - Date.UTC(2026, 10, 15)) / 864e5);
+  const musOnPB = ((n % 2) + 2) % 2 === 0;
+  return { "Bambooflat|Chatham": ["MV NORTH BAY", musOnPB ? "MV PILOBHABI" : "MV MUS"], "Bambooflat|Phoenix Bay": [musOnPB ? "MV MUS" : "MV PILOBHABI"] };
+}
+const VSTART = { "Bambooflat|Chatham": ["Bambooflat", "Chatham"] };   // where each named boat spends the night
+let VNAMES = vnamesFor(istDay()), builtDay = "";
 // Passenger boats (blue hull, white cabins): [casting off, at sea, getting off] — estimates, change here
 const PTIMES = { "Bambooflat|Phoenix Bay": [0, 20, 3], "Hopetown|Phoenix Bay": [0, 15, 3], "Bambooflat|Hopetown": [0, 10, 3],
                  "Chatham|Dandus Point": [0, 10, 3] }, PTIME_DEFAULT = [0, 15, 3];
@@ -713,6 +724,8 @@ function voyageFig(b, d, a) {
 // every boat in the harbour, with the trips it makes today (boats are matched to trips by who is free at that jetty)
 const BOATS = [], BY_ID = {}, TRIP = {};
 function buildAll() {
+  builtDay = istDay(); VNAMES = vnamesFor(builtDay);                           // today's boats (MUS/PILOBHABI swap daily)
+  BOATS.length = 0; for (const k in BY_ID) delete BY_ID[k]; for (const k in TRIP) delete TRIP[k];
   const groups = {};
   for (const r of ROUTES) {
     if (r.from === "Bambooflat" && r.to === "Hopetown") continue;            // same boats as Bambooflat → Phoenix Bay via Hopetown
@@ -723,7 +736,7 @@ function buildAll() {
   for (const [key, trips] of Object.entries(groups)) {
     const [pair, type] = key.split("#"), [x, y] = pair.split("|");
     const times = type === "vf" ? (VTIMES[x + "|" + y] || VTIMES[y + "|" + x] || VTIME_DEFAULT) : (PTIMES[pair] || PTIME_DEFAULT);
-    const fleet = buildFleet(trips, times, type, times, (type === "vf" ? VNAMES : PNAMES)[pair] || []);
+    const fleet = buildFleet(trips, times, type, times, (type === "vf" ? VNAMES : PNAMES)[pair] || [], type === "vf" ? VSTART[pair] || [] : []);
     fleet.forEach((b, i) => {
       b.pair = pair; b.uid = `${type}-${pair.replace(/[^A-Za-z|]/g, "").replace("|", "-")}-${i + 1}`;
       b.label = b.name || `${type === "vf" ? "Vehicle ferry" : "Passenger boat"}${fleet.length > 1 ? " " + (i + 1) : ""}`;
@@ -735,8 +748,8 @@ function buildAll() {
 
 // Where the vehicle ferry is now (s = seconds since midnight, Port Blair time).
 // trips: this direction first, then the return trips. A trip = cast off → at sea → unload; between trips it loads.
-function buildFleet(trips, [cast, cross, unload], type, times, names) {
-  const boats = [];
+function buildFleet(trips, [cast, cross, unload], type, times, names, starts = []) {
+  const boats = starts.map((at, i) => ({ id: i, at, free: 0, trips: [], type, times, name: names[i] || "" }));   // boats waiting overnight
   for (const tr of trips.slice().sort((p, q) => p.d - q.d)) {
     let b = boats.filter(x => x.at === tr.a && x.free <= tr.d).sort((p, q) => p.free - q.free)[0];
     if (!b) boats.push(b = { id: boats.length, at: tr.a, free: 0, trips: [], type, times, name: names[boats.length] || "" });

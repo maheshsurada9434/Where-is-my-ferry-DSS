@@ -1896,7 +1896,17 @@ addEventListener("resize", () => { if (reduced) document.querySelectorAll(".voya
 // ── start ──
 const p0 = ist();
 setSky(Math.floor(nowSec(p0) / 60));
+// Always open on the home page: a live view left open last time (or saved to the Home Screen) is not reopened
+if (location.hash) history.replaceState(null, "", location.pathname + location.search);
 buildAll(); renderChips(); route(); startSea();
+// Phone browsers restore the last screen when the app is reopened; after 10 min away, go back home
+let hiddenAt = 0;
+const goHome = () => { if (live) { openedHere = false; history.replaceState(null, "", location.pathname + location.search); route(); } };
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (hiddenAt && Date.now() - hiddenAt > 10 * 60 * 1000) goHome();
+});
+addEventListener("pageshow", e => { if (e.persisted) goHome(); });
 if (!reduced) requestAnimationFrame(voyLoop);
 if (document.fonts) document.fonts.ready.then(() => { movePill(); placeMarker(nowSec(ist())); });
 setInterval(() => {
